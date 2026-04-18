@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Environment (sensible Daten!)
+backend/.env
+
+# SQLite-Datenbank
+backend/data/*.db
+backend/data/*.db-wal
+backend/data/*.db-shm
+
+# Uploads (Profilfotos)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build Output
+frontend/dist/
+
+# Migrations (temporäre Skripte)
+backend/migrate-*.js
+backend/check-*.js

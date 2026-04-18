@@ -1,0 +1,209 @@
+const Database = require('better-sqlite3');
+const path = require('path');
+const fs = require('fs');
+
+const DB_PATH = path.join(__dirname, '..', '..', 'data', 'summerleague.db');
+
+// Stelle sicher, dass das Verzeichnis existiert
+const dbDir = path.dirname(DB_PATH);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
+
+const db = new Database(DB_PATH);
+
+// WAL-Modus für bessere Performance
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+
+function initializeDatabase() {
+  db.exec(`
+    -- Benutzer-Tabelle
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      name TEXT NOT NULL,
+      dtb_id TEXT,
+      lk REAL DEFAULT 25.0,
+      profile_photo TEXT,
+      email_verified INTEGER DEFAULT 0,
+      verification_code TEXT,
+      verification_code_expires INTEGER,
+      reset_token TEXT,
+      reset_token_expires INTEGER,
+      data_consent INTEGER DEFAULT 0,
+      data_consent_date TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Admin-Tabelle
+    CREATE TABLE IF NOT EXISTS admins (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      email TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Turniere
+    CREATE TABLE IF NOT EXISTS tournaments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      description TEXT,
+      type TEXT NOT NULL CHECK(type IN ('league', 'ko', 'lk_day', 'doubles')),
+      status TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'registration_open', 'registration_closed', 'draw_complete', 'in_progress', 'completed', 'cancelled')),
+      max_participants INTEGER NOT NULL DEFAULT 16,
+      
+      -- Liga-Modus Einstellungen
+      points_win INTEGER DEFAULT 3,
+      points_loss INTEGER DEFAULT 0,
+      points_draw INTEGER DEFAULT 1,
+      lk_handicap_enabled INTEGER DEFAULT 0,
+      lk_handicap_factor REAL DEFAULT 0.5,
+      
+      -- Spielregeln
+      winning_sets INTEGER DEFAULT 2 CHECK(winning_sets IN (2, 3)),
+      no_ad INTEGER DEFAULT 0,
+      match_tiebreak INTEGER DEFAULT 0,
+      match_tiebreak_at TEXT DEFAULT '1:1',
+      
+      -- Doppel-Einstellungen
+      doubles_rounds INTEGER DEFAULT 3,
+      doubles_random_partners INTEGER DEFAULT 0,
+      
+      -- Ergebnis-Einstellungen
+      self_reporting INTEGER DEFAULT 0,
+      dtb_id_required INTEGER DEFAULT 0,
+      
+      -- Termine
+      registration_deadline TEXT,
+      draw_date TEXT,
+      tournament_start TEXT,
+      tournament_end TEXT,
+      location TEXT,
+      
+      created_by INTEGER REFERENCES admins(id),
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Turnier-Anmeldungen
+    CREATE TABLE IF NOT EXISTS tournament_registrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected', 'withdrawn')),
+      seed_number INTEGER,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(tournament_id, user_id)
+    );
+
+    -- Runden
+    CREATE TABLE IF NOT EXISTS rounds (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+      round_number INTEGER NOT NULL,
+      name TEXT,
+      scheduled_date TEXT,
+      status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed')),
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Matches/Spiele
+    CREATE TABLE IF NOT EXISTS matches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+      round_id INTEGER REFERENCES rounds(id) ON DELETE CASCADE,
+      match_number INTEGER,
+      
+      -- Einzel
+      player1_id INTEGER REFERENCES users(id),
+      player2_id INTEGER REFERENCES users(id),
+      
+      -- Doppel
+      partner1_id INTEGER REFERENCES users(id),
+      partner2_id INTEGER REFERENCES users(id),
+      
+      -- KO-Baum
+      bracket_position INTEGER,
+      next_match_id INTEGER REFERENCES matches(id),
+      
+      -- Ergebnis
+      score TEXT,
+      sets_player1 INTEGER DEFAULT 0,
+      sets_player2 INTEGER DEFAULT 0,
+      winner_id INTEGER REFERENCES users(id),
+      walkover INTEGER DEFAULT 0,
+      
+      -- Ergebnis-Status
+      result_status TEXT DEFAULT 'pending' CHECK(result_status IN ('pending', 'reported', 'confirmed', 'disputed', 'admin_set')),
+      reported_by INTEGER REFERENCES users(id),
+      confirmation_token TEXT,
+      dispute_reason TEXT,
+      
+      scheduled_date TEXT,
+      scheduled_time TEXT,
+      court TEXT,
+      
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Liga-Tabelle
+    CREATE TABLE IF NOT EXISTS league_standings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      points REAL DEFAULT 0,
+      matches_played INTEGER DEFAULT 0,
+      wins INTEGER DEFAULT 0,
+      losses INTEGER DEFAULT 0,
+      draws INTEGER DEFAULT 0,
+      sets_won INTEGER DEFAULT 0,
+      sets_lost INTEGER DEFAULT 0,
+      games_won INTEGER DEFAULT 0,
+      games_lost INTEGER DEFAULT 0,
+      bonus_points REAL DEFAULT 0,
+      UNIQUE(tournament_id, user_id)
+    );
+
+    -- Match-Satz-Details
+    CREATE TABLE IF NOT EXISTS match_sets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+      set_number INTEGER NOT NULL,
+      games_player1 INTEGER DEFAULT 0,
+      games_player2 INTEGER DEFAULT 0,
+      tiebreak_points_player1 INTEGER,
+      tiebreak_points_player2 INTEGER,
+      UNIQUE(match_id, set_number)
+    );
+
+    -- E-Mail-Log
+    CREATE TABLE IF NOT EXISTS email_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recipient TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      type TEXT,
+      sent_at TEXT DEFAULT (datetime('now')),
+      status TEXT DEFAULT 'sent'
+    );
+
+    -- Indices für Performance
+    CREATE INDEX IF NOT EXISTS idx_tournament_reg_tournament ON tournament_registrations(tournament_id);
+    CREATE INDEX IF NOT EXISTS idx_tournament_reg_user ON tournament_registrations(user_id);
+    CREATE INDEX IF NOT EXISTS idx_matches_tournament ON matches(tournament_id);
+    CREATE INDEX IF NOT EXISTS idx_matches_players ON matches(player1_id, player2_id);
+    CREATE INDEX IF NOT EXISTS idx_league_standings_tournament ON league_standings(tournament_id);
+    CREATE INDEX IF NOT EXISTS idx_rounds_tournament ON rounds(tournament_id);
+  `);
+
+  console.log('Datenbank initialisiert.');
+}
+
+module.exports = { db, initializeDatabase };
