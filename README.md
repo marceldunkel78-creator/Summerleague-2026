@@ -242,3 +242,13 @@ Vollständige CRUD-Operationen für Benutzer, Turniere, Anmeldungen, Matches, Au
 ## Lizenz
 
 Privates Projekt – nicht zur Weiterverbreitung bestimmt.
+
+
+## Updates deployen (per SSH auf NAS)
+
+```bash
+cd /volume1/docker/"Summerleague 2026"
+git pull
+sudo docker compose down
+sudo docker compose up -d --build
+```

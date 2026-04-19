@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api';
 
-const typeLabels = { league: 'Liga (Jeder gegen Jeden)', ko: 'KO-Turnier', lk_day: 'LK-Tagesturnier', doubles: 'Doppel-Turnier' };
+const typeLabels = { league: 'Liga (Jeder gegen Jeden)', ko: 'KO-Turnier', lk_day: 'LK-Tagesturnier', doubles: 'Doppel-Turnier', one_point: 'One Point Slam', tiebreak_ko: 'Tiebreak-Turnier' };
 const statusLabels = { draft: 'Entwurf', registration_open: 'Anmeldung offen', registration_closed: 'Anmeldung geschlossen', draw_complete: 'Auslosung fertig', in_progress: 'Läuft', completed: 'Beendet', cancelled: 'Abgesagt' };
 
 export default function Tournaments() {
@@ -49,7 +49,7 @@ export default function Tournaments() {
                 {t.tournament_start && (
                   <div className="info-row">
                     <span className="info-label">Datum</span>
-                    <span className="info-value">{new Date(t.tournament_start).toLocaleDateString('de')}</span>
+                    <span className="info-value">{new Date(t.tournament_start).toLocaleDateString('de')}{t.start_time ? ` · ${t.start_time} Uhr` : ''}</span>
                   </div>
                 )}
                 {t.location && (

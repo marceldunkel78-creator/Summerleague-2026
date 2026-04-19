@@ -126,12 +126,12 @@ export default function AdminTournamentEdit() {
           <button className={`tab ${tab === 'registrations' ? 'active' : ''}`} onClick={() => setTab('registrations')}>
             Anmeldungen ({registrations.length})
           </button>
-          {rounds.length > 0 && tournament.type !== 'ko' && (
+          {rounds.length > 0 && !['ko', 'one_point', 'tiebreak_ko'].includes(tournament.type) && (
             <button className={`tab ${tab === 'rounds' ? 'active' : ''}`} onClick={() => setTab('rounds')}>
               Runden-Spielplan
             </button>
           )}
-          {tournament.type === 'ko' && matches.length > 0 && (
+          {['ko', 'one_point', 'tiebreak_ko'].includes(tournament.type) && matches.length > 0 && (
             <button className={`tab ${tab === 'bracket' ? 'active' : ''}`} onClick={() => setTab('bracket')}>
               Turnierbaum
             </button>
@@ -205,7 +205,15 @@ export default function AdminTournamentEdit() {
                 <input type="date" value={tournament.tournament_end?.split('T')[0] || ''} onChange={e => handleChange('tournament_end', e.target.value)} />
               </div>
             </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Startuhrzeit</label>
+                <input type="time" value={tournament.start_time || ''} onChange={e => handleChange('start_time', e.target.value)} />
+              </div>
+              <div className="form-group"></div>
+            </div>
 
+            {!['one_point', 'tiebreak_ko'].includes(tournament.type) && (<>
             <div className="form-row">
               <div className="form-group">
                 <label>Gewinnsätze</label>
@@ -236,6 +244,7 @@ export default function AdminTournamentEdit() {
                 <label><input type="checkbox" checked={!!tournament.is_doubles} onChange={e => handleChange('is_doubles', e.target.checked ? 1 : 0)} /> Doppel-KO</label>
               )}
             </div>
+            </>)}
 
             {tournament.type === 'doubles' && (
               <div className="mt-3" style={{ padding: '16px', background: 'var(--surface-alt, #f8f9fa)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
@@ -426,11 +435,11 @@ export default function AdminTournamentEdit() {
           </div>
         )}
 
-        {tab === 'rounds' && tournament.type !== 'ko' && (
+        {tab === 'rounds' && !['ko', 'one_point', 'tiebreak_ko'].includes(tournament.type) && (
           <RoundScheduleEditor rounds={rounds} headers={headers} onReload={load} />
         )}
 
-        {tab === 'bracket' && tournament.type === 'ko' && (
+        {tab === 'bracket' && ['ko', 'one_point', 'tiebreak_ko'].includes(tournament.type) && (
           <AdminKOBracket rounds={rounds} matches={matches} headers={headers} onReload={load} />
         )}
       </div>
@@ -518,7 +527,7 @@ function AdminKOBracket({ rounds, matches, headers, onReload }) {
                           <div className={`bracket-player ${m.winner_id && m.winner_id === m.player1_id ? 'winner' : ''}`}>
                             <span className="bracket-player-info">
                               {m.player1_seed && <span className="bracket-seed">[{m.player1_seed}]</span>}
-                              <span>{m.player1_name || 'TBD'}</span>
+                              <span>{m.player1_name || 'TBD'}{tournament.type === 'one_point' && m.server_id === m.player1_id && ' 🎾'}</span>
                               {m.player1_lk && <span className="bracket-lk">LK {m.player1_lk}</span>}
                             </span>
                             <span className="bracket-scores">
@@ -530,7 +539,7 @@ function AdminKOBracket({ rounds, matches, headers, onReload }) {
                           <div className={`bracket-player ${m.winner_id && m.winner_id === m.player2_id ? 'winner' : ''}`}>
                             <span className="bracket-player-info">
                               {m.player2_seed && <span className="bracket-seed">[{m.player2_seed}]</span>}
-                              <span>{m.player2_name || 'TBD'}</span>
+                              <span>{m.player2_name || 'TBD'}{tournament.type === 'one_point' && m.server_id === m.player2_id && ' 🎾'}</span>
                               {m.player2_lk && <span className="bracket-lk">LK {m.player2_lk}</span>}
                             </span>
                             <span className="bracket-scores">

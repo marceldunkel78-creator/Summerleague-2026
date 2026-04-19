@@ -9,7 +9,7 @@ const { db } = require('../config/database');
 const { authenticateAdmin } = require('../middleware/auth');
 const { sendRegistrationApprovedEmail } = require('../services/emailService');
 const { generateRoundRobin, updateLeagueStandings, getLeagueStandings } = require('../services/leagueService');
-const { generateKOBracket, advanceWinner, generateLKDayTournament, generateDoublesTournament, updateDoublesStandings } = require('../services/bracketService');
+const { generateKOBracket, advanceWinner, generateLKDayTournament, generateDoublesTournament, updateDoublesStandings, generateOnePointSlam, generateTiebreakKO, advanceOnePointWinner } = require('../services/bracketService');
 
 const router = express.Router();
 
@@ -164,7 +164,7 @@ router.post('/tournaments', authenticateAdmin, (req, res) => {
       doubles_round_duration, doubles_start_time, doubles_courts,
       entry_fee, prize_description,
       self_reporting, dtb_id_required, registration_deadline, draw_date,
-      tournament_start, tournament_end, location
+      tournament_start, tournament_end, start_time, location
     } = req.body;
 
     if (!name || !type) {
@@ -180,8 +180,8 @@ router.post('/tournaments', authenticateAdmin, (req, res) => {
         doubles_rounds, doubles_random_partners, is_doubles, doubles_round_duration, doubles_start_time, doubles_courts,
         entry_fee, prize_description,
         self_reporting, dtb_id_required, registration_deadline, draw_date,
-        tournament_start, tournament_end, location, created_by, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        tournament_start, tournament_end, start_time, location, created_by, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       name, description || null, type, max_participants || 16,
       points_win || 3, points_loss || 0, points_draw || 1,
@@ -191,7 +191,7 @@ router.post('/tournaments', authenticateAdmin, (req, res) => {
       doubles_round_duration || null, doubles_start_time || null, doubles_courts || null,
       entry_fee || null, prize_description || null,
       self_reporting ? 1 : 0, dtb_id_required ? 1 : 0, registration_deadline || null, draw_date || null,
-      tournament_start || null, tournament_end || null, location || null,
+      tournament_start || null, tournament_end || null, start_time || null, location || null,
       req.admin.id, initialStatus
     );
 
@@ -215,7 +215,7 @@ router.put('/tournaments/:id', authenticateAdmin, (req, res) => {
       'doubles_round_duration', 'doubles_start_time', 'doubles_courts',
       'entry_fee', 'prize_description',
       'self_reporting', 'dtb_id_required',
-      'registration_deadline', 'draw_date', 'tournament_start', 'tournament_end', 'location'
+      'registration_deadline', 'draw_date', 'tournament_start', 'tournament_end', 'start_time', 'location'
     ];
 
     const updates = [];
@@ -382,6 +382,12 @@ router.post('/tournaments/:id/draw', authenticateAdmin, (req, res) => {
         generateDoublesTournament(tournament.id);
         result = { success: true };
         break;
+      case 'one_point':
+        result = generateOnePointSlam(tournament.id);
+        break;
+      case 'tiebreak_ko':
+        result = generateTiebreakKO(tournament.id);
+        break;
       default:
         return res.status(400).json({ error: 'Unbekannter Turniertyp.' });
     }
@@ -539,6 +545,12 @@ router.put('/matches/:matchId', authenticateAdmin, (req, res) => {
     }
     if (match.tournament_type === 'ko' && winnerId) {
       advanceWinner(match.id);
+    }
+    if (match.tournament_type === 'tiebreak_ko' && winnerId) {
+      advanceWinner(match.id);
+    }
+    if (match.tournament_type === 'one_point' && winnerId) {
+      advanceOnePointWinner(match.id);
     }
     if (match.tournament_type === 'doubles' && winnerId) {
       updateDoublesStandings(match.id);

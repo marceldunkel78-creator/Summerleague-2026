@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../api';
 import { AdminSidebar } from './AdminDashboard';
 
-const typeLabels = { league: 'Liga', ko: 'KO-Turnier', lk_day: 'LK-Tagesturnier', doubles: 'Doppel' };
+const typeLabels = { league: 'Liga', ko: 'KO-Turnier', lk_day: 'LK-Tagesturnier', doubles: 'Doppel', one_point: 'One Point Slam', tiebreak_ko: 'Tiebreak-Turnier' };
 const statusLabels = { draft: 'Entwurf', registration_open: 'Anmeldung offen', registration_closed: 'Geschlossen', draw_complete: 'Auslosung fertig', in_progress: 'Läuft', completed: 'Beendet', cancelled: 'Abgesagt' };
 
 export default function AdminTournaments() {
@@ -87,7 +87,7 @@ function CreateTournamentModal({ onClose, onCreated, headers }) {
     doubles_round_duration: '', doubles_start_time: '', doubles_courts: '',
     entry_fee: '', prize_description: '',
     self_reporting: true, dtb_id_required: false, registration_deadline: '', draw_date: '',
-    tournament_start: '', tournament_end: '', location: ''
+    tournament_start: '', tournament_end: '', start_time: '', location: ''
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -146,6 +146,8 @@ function CreateTournamentModal({ onClose, onCreated, headers }) {
                 <option value="ko">KO-Turnier</option>
                 <option value="lk_day">LK-Tagesturnier</option>
                 <option value="doubles">Doppel-Turnier</option>
+                <option value="one_point">One Point Slam</option>
+                <option value="tiebreak_ko">Tiebreak-Turnier</option>
               </select>
             </div>
           </div>
@@ -208,9 +210,17 @@ function CreateTournamentModal({ onClose, onCreated, headers }) {
               <input type="date" name="tournament_end" value={form.tournament_end} onChange={handleChange} />
             </div>
           </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Startuhrzeit</label>
+              <input type="time" name="start_time" value={form.start_time} onChange={handleChange} />
+            </div>
+            <div className="form-group"></div>
+          </div>
 
-          <h3 style={{ margin: '1.5rem 0 1rem', color: 'var(--primary)' }}>🎾 Spielregeln</h3>
-          {form.type !== 'doubles' && (
+          {!['doubles', 'one_point', 'tiebreak_ko'].includes(form.type) && (
+            <>
+            <h3 style={{ margin: '1.5rem 0 1rem', color: 'var(--primary)' }}>🎾 Spielregeln</h3>
             <div className="form-row">
               <div className="form-group">
                 <label>Gewinnsätze</label>
@@ -227,8 +237,22 @@ function CreateTournamentModal({ onClose, onCreated, headers }) {
                 </select>
               </div>
             </div>
+            </>
           )}
 
+          {form.type === 'one_point' && (
+            <div className="alert alert-info" style={{ margin: '1rem 0' }}>
+              🎯 <strong>One Point Slam:</strong> KO-Format – pro Match wird nur ein Punkt gespielt. Zufällige Auslosung, zufälliger Aufschläger.
+            </div>
+          )}
+
+          {form.type === 'tiebreak_ko' && (
+            <div className="alert alert-info" style={{ margin: '1rem 0' }}>
+              🎾 <strong>Tiebreak-Turnier:</strong> KO-Format – 3 Gewinnsätze, jeder Satz ist ein Tiebreak bis 5. Setzliste nach LK.
+            </div>
+          )}
+
+          {!['one_point', 'tiebreak_ko'].includes(form.type) && (
           <div className="flex gap-3">
             <div className="checkbox-group">
               <input type="checkbox" name="no_ad" id="no_ad" checked={form.no_ad} onChange={handleChange} />
@@ -249,6 +273,7 @@ function CreateTournamentModal({ onClose, onCreated, headers }) {
               <label htmlFor="dtb_id_required">DTB-ID Pflicht</label>
             </div>
           </div>
+          )}
 
           {form.type === 'league' && (
             <>

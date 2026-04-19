@@ -59,12 +59,17 @@ export default function AdminMatches() {
 
   const handleSetResult = async () => {
     setMsg(''); setError('');
-    const sets = scores
-      .filter(s => s[0] !== '' && s[1] !== '')
-      .map(s => ({ games_player1: parseInt(s[0]), games_player2: parseInt(s[1]) }));
-
-    if (sets.length === 0) { setError('Mindestens 1 Satz erforderlich.'); return; }
     if (!winner) { setError('Gewinner auswählen.'); return; }
+
+    let sets;
+    if (tournament?.type === 'one_point') {
+      sets = [{ games_player1: parseInt(winner) === editMatch.player1_id ? 1 : 0, games_player2: parseInt(winner) === editMatch.player2_id ? 1 : 0 }];
+    } else {
+      sets = scores
+        .filter(s => s[0] !== '' && s[1] !== '')
+        .map(s => ({ games_player1: parseInt(s[0]), games_player2: parseInt(s[1]) }));
+      if (sets.length === 0) { setError('Mindestens 1 Satz erforderlich.'); return; }
+    }
 
     try {
       await api.put(`/admin/matches/${editMatch.id}`, { sets, winnerId: parseInt(winner) }, { headers });
@@ -235,10 +240,13 @@ export default function AdminMatches() {
                 <strong>{editMatch.player1_name || 'Spieler 1'}</strong> vs <strong>{editMatch.player2_name || 'Spieler 2'}</strong>
               </p>
 
+              {tournament?.type === 'one_point' ? (
+                <div className="alert alert-info mb-2">🎯 One Point Slam – wähle nur den Gewinner.</div>
+              ) : (
               <div className="mb-2">
                 {scores.map((s, i) => (
                   <div key={i} className="flex gap-1 mb-1" style={{ alignItems: 'center' }}>
-                    <span style={{ minWidth: 50, fontSize: '0.85rem', color: 'var(--text-muted)' }}>Satz {i + 1}</span>
+                    <span style={{ minWidth: 50, fontSize: '0.85rem', color: 'var(--text-muted)' }}>{tournament?.type === 'tiebreak_ko' ? `TB ${i + 1}` : `Satz ${i + 1}`}</span>
                     <input type="number" min="0" max="99" style={{ width: 60, textAlign: 'center', padding: '6px', border: '2px solid var(--border)', borderRadius: 6 }}
                       value={s[0]} onChange={e => { const n = [...scores]; n[i] = [e.target.value, n[i][1]]; setScores(n); }} />
                     <span>:</span>
@@ -247,6 +255,7 @@ export default function AdminMatches() {
                   </div>
                 ))}
               </div>
+              )}
 
               <div className="form-group">
                 <label>Gewinner</label>

@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api';
 
-const typeLabels = { league: 'Liga', ko: 'KO-Turnier', lk_day: 'LK-Tagesturnier', doubles: 'Doppel' };
+const typeLabels = { league: 'Liga', ko: 'KO-Turnier', lk_day: 'LK-Tagesturnier', doubles: 'Doppel', one_point: 'One Point Slam', tiebreak_ko: 'Tiebreak-Turnier' };
 const statusLabels = { draft: 'Entwurf', registration_open: 'Anmeldung offen', registration_closed: 'Anmeldung geschlossen', draw_complete: 'Auslosung fertig', in_progress: 'Läuft', completed: 'Beendet' };
 
 export default function TournamentDetail() {
@@ -115,7 +115,7 @@ export default function TournamentDetail() {
         )}
         {matches.length > 0 && (
           <button className={`tab ${tab === 'matches' ? 'active' : ''}`} onClick={() => setTab('matches')}>
-            {tournament.type === 'ko' ? 'Turnierbaum' : 'Spiele'}
+            {['ko', 'one_point', 'tiebreak_ko'].includes(tournament.type) ? 'Turnierbaum' : 'Spiele'}
           </button>
         )}
         <button className={`tab ${tab === 'info' ? 'active' : ''}`} onClick={() => setTab('info')}>Info</button>
@@ -137,11 +137,14 @@ export default function TournamentDetail() {
               tournament.tournament_start ? 
               `${new Date(tournament.tournament_start).toLocaleDateString('de')}${tournament.tournament_end ? ' - ' + new Date(tournament.tournament_end).toLocaleDateString('de') : ''}` : '-'
             } />
+            {tournament.start_time && <InfoItem label="Startuhrzeit" value={tournament.start_time + ' Uhr'} />}
             <InfoItem label="Meldefrist" value={tournament.registration_deadline ? new Date(tournament.registration_deadline).toLocaleDateString('de') : '-'} />
             <InfoItem label="Auslosung" value={tournament.draw_date ? new Date(tournament.draw_date).toLocaleDateString('de') : '-'} />
-            {tournament.type !== 'doubles' && <InfoItem label="Gewinnsätze" value={tournament.winning_sets} />}
-            <InfoItem label="No-Ad" value={tournament.no_ad ? 'Ja' : 'Nein'} />
-            {tournament.type !== 'doubles' && <InfoItem label="Match-Tiebreak" value={tournament.match_tiebreak ? `Ja (bei ${tournament.match_tiebreak_at})` : 'Nein'} />}
+            {!['doubles', 'one_point', 'tiebreak_ko'].includes(tournament.type) && <InfoItem label="Gewinnsätze" value={tournament.winning_sets} />}
+            {!['one_point', 'tiebreak_ko'].includes(tournament.type) && <InfoItem label="No-Ad" value={tournament.no_ad ? 'Ja' : 'Nein'} />}
+            {!['doubles', 'one_point', 'tiebreak_ko'].includes(tournament.type) && <InfoItem label="Match-Tiebreak" value={tournament.match_tiebreak ? `Ja (bei ${tournament.match_tiebreak_at})` : 'Nein'} />}
+            {tournament.type === 'one_point' && <InfoItem label="Modus" value="Ein Punkt pro Match – Gewinner des Ballwechsels zieht weiter" />}
+            {tournament.type === 'tiebreak_ko' && <InfoItem label="Modus" value="3 Gewinnsätze – jeder Satz ist ein Tiebreak bis 5" />}
             {tournament.type === 'league' && (
               <>
                 <InfoItem label="Punkte Sieg" value={tournament.points_win} />
@@ -165,7 +168,7 @@ export default function TournamentDetail() {
         <div className="card">
           <div className="table-wrapper">
             <table>
-              <thead><tr><th>#</th><th>Spieler</th><th>LK</th>{tournament.type === 'ko' && <th>Setzplatz</th>}{tournament.type === 'league' && user && myRegistration?.status === 'approved' && <th>Aktion</th>}</tr></thead>
+              <thead><tr><th>#</th><th>Spieler</th><th>LK</th>{['ko', 'tiebreak_ko'].includes(tournament.type) && <th>Setzplatz</th>}{tournament.type === 'league' && user && myRegistration?.status === 'approved' && <th>Aktion</th>}</tr></thead>
               <tbody>
                 {participants.map((p, i) => (
                   <tr key={p.id}>
@@ -183,7 +186,7 @@ export default function TournamentDetail() {
                       </div>
                     </td>
                     <td>{p.lk}</td>
-                    {tournament.type === 'ko' && <td>{p.seed_number || '-'}</td>}
+                    {['ko', 'tiebreak_ko'].includes(tournament.type) && <td>{p.seed_number || '-'}</td>}
                     {tournament.type === 'league' && user && myRegistration?.status === 'approved' && (
                       <td>
                         {p.id !== user.id && (
@@ -274,11 +277,11 @@ export default function TournamentDetail() {
         </div>
       )}
 
-      {tab === 'matches' && tournament.type === 'ko' && (
+      {tab === 'matches' && ['ko', 'one_point', 'tiebreak_ko'].includes(tournament.type) && (
         <KOBracket rounds={rounds} matches={matches} tournament={tournament} user={user} onReload={load} />
       )}
 
-      {tab === 'matches' && tournament.type !== 'ko' && (
+      {tab === 'matches' && !['ko', 'one_point', 'tiebreak_ko'].includes(tournament.type) && (
         <MatchList rounds={rounds} matches={matches} tournament={tournament} user={user} onReload={load} />
       )}
 
@@ -475,7 +478,7 @@ function KOBracket({ rounds, matches, tournament, user, onReload }) {
                           <div className={`bracket-player ${m.winner_id && m.winner_id === m.player1_id ? 'winner' : ''}`}>
                             <span className="bracket-player-info">
                               {m.player1_seed && <span className="bracket-seed">[{m.player1_seed}]</span>}
-                              <span>{m.player1_name || 'TBD'}</span>
+                              <span>{m.player1_name || 'TBD'}{tournament.type === 'one_point' && m.server_id === m.player1_id && ' 🎾'}</span>
                               {m.player1_lk && <span className="bracket-lk">LK {m.player1_lk}</span>}
                             </span>
                             <span className="bracket-scores">
@@ -487,7 +490,7 @@ function KOBracket({ rounds, matches, tournament, user, onReload }) {
                           <div className={`bracket-player ${m.winner_id && m.winner_id === m.player2_id ? 'winner' : ''}`}>
                             <span className="bracket-player-info">
                               {m.player2_seed && <span className="bracket-seed">[{m.player2_seed}]</span>}
-                              <span>{m.player2_name || 'TBD'}</span>
+                              <span>{m.player2_name || 'TBD'}{tournament.type === 'one_point' && m.server_id === m.player2_id && ' 🎾'}</span>
                               {m.player2_lk && <span className="bracket-lk">LK {m.player2_lk}</span>}
                             </span>
                             <span className="bracket-scores">
@@ -805,8 +808,11 @@ function MatchList({ rounds, matches, tournament, user, onReload }) {
 
 function ScoreModal({ match, tournament, onClose, onSaved }) {
   const isDoubles = tournament.type === 'doubles';
-  const numSets = isDoubles ? 1 : (tournament.winning_sets === 3 ? 5 : 3);
-  const useMTB = tournament.match_tiebreak;
+  const isOnePoint = tournament.type === 'one_point';
+  const isTiebreakKO = tournament.type === 'tiebreak_ko';
+  const numSets = isOnePoint ? 0 : isTiebreakKO ? 5 : isDoubles ? 1 : (tournament.winning_sets === 3 ? 5 : 3);
+  const winningSets = isTiebreakKO ? 3 : tournament.winning_sets;
+  const useMTB = !isOnePoint && !isTiebreakKO && tournament.match_tiebreak;
   const mtbAt = tournament.match_tiebreak_at || '1:1';
   const [sets, setSets] = useState(Array.from({ length: numSets }, () => ({ games_player1: '', games_player2: '' })));
   const [winnerId, setWinnerId] = useState('');
@@ -911,14 +917,14 @@ function ScoreModal({ match, tournament, onClose, onSaved }) {
         if (g1 > g2) p1++; else if (g2 > g1) p2++;
       }
     }
-    if (p1 >= tournament.winning_sets) return String(match.player1_id);
-    if (p2 >= tournament.winning_sets) return String(match.player2_id);
+    if (p1 >= winningSets) return String(match.player1_id);
+    if (p2 >= winningSets) return String(match.player2_id);
     return '';
   }
 
   useEffect(() => {
-    // Auto-select winner when sets change (not for doubles since draws are possible)
-    if (tournament.type !== 'doubles') {
+    // Auto-select winner when sets change (not for doubles since draws are possible, not for one_point)
+    if (!isDoubles && !isOnePoint) {
       const detected = autoDetectWinner(sets);
       if (detected) setWinnerId(detected);
     }
@@ -929,13 +935,46 @@ function ScoreModal({ match, tournament, onClose, onSaved }) {
     setError('');
     setWarning('');
 
-    const validSets = sets.filter(s => s.games_player1 !== '' && s.games_player2 !== '');
-    if (validSets.length === 0) return setError('Mindestens ein Satz eingeben.');
     if (!winnerId) return setError('Gewinner auswählen.');
 
-    const validationError = tournament.type === 'doubles' ? null : validateTennisResult(sets, winnerId);
-    if (validationError) {
-      return setWarning(validationError);
+    // One Point Slam: Kein Satz-Ergebnis nötig
+    if (isOnePoint) {
+      setLoading(true);
+      try {
+        await api.post(`/matches/${match.id}/report`, {
+          sets: [{ games_player1: parseInt(winnerId) === match.player1_id ? 1 : 0, games_player2: parseInt(winnerId) === match.player2_id ? 1 : 0 }],
+          winnerId: parseInt(winnerId)
+        });
+        onSaved();
+      } catch (err) {
+        setError(err.response?.data?.error || 'Fehler beim Eintragen.');
+      } finally { setLoading(false); }
+      return;
+    }
+
+    const validSets = sets.filter(s => s.games_player1 !== '' && s.games_player2 !== '');
+    if (validSets.length === 0) return setError('Mindestens ein Satz eingeben.');
+
+    // Tiebreak-KO: Validierung (jeder Satz ist Tiebreak bis 5, mind. 2 Differenz ab 5)
+    if (isTiebreakKO) {
+      let sP1 = 0, sP2 = 0;
+      for (let i = 0; i < validSets.length; i++) {
+        const g1 = parseInt(validSets[i].games_player1), g2 = parseInt(validSets[i].games_player2);
+        if (isNaN(g1) || isNaN(g2) || g1 < 0 || g2 < 0) return setError(`Satz ${i + 1}: Ungültige Punktzahl.`);
+        if (g1 === g2) return setError(`Satz ${i + 1}: Unentschieden nicht möglich.`);
+        const high = Math.max(g1, g2), low = Math.min(g1, g2);
+        if (high < 5) return setError(`Satz ${i + 1}: Mindestens 5 Punkte zum Gewinn (aktuell: ${g1}:${g2}).`);
+        if (high > 5 && (high - low) !== 2) return setError(`Satz ${i + 1}: Ab 5:4 muss die Differenz 2 betragen (aktuell: ${g1}:${g2}).`);
+        if (high === 5 && low > 3) return setError(`Satz ${i + 1}: Bei 5 Punkten darf der Gegner max. 3 haben, oder es geht weiter (aktuell: ${g1}:${g2}).`);
+        if (g1 > g2) sP1++; else sP2++;
+        if (sP1 === 3 || sP2 === 3) {
+          if (i < validSets.length - 1) return setError(`Nach Satz ${i + 1} steht es ${sP1}:${sP2} – keine weiteren Sätze nötig.`);
+        }
+      }
+      if (sP1 < 3 && sP2 < 3) return setError(`Match nicht beendet: ${sP1}:${sP2} Sätze. 3 Gewinnsätze benötigt.`);
+    } else {
+      const validationError = isDoubles ? null : validateTennisResult(sets, winnerId);
+      if (validationError) return setWarning(validationError);
     }
 
     setLoading(true);
@@ -965,6 +1004,9 @@ function ScoreModal({ match, tournament, onClose, onSaved }) {
         
         <p className="mb-2">
           <strong>{match.player1_name}</strong> vs <strong>{match.player2_name}</strong>
+          {isOnePoint && match.server_id && (
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}> — Aufschlag: <strong>{match.server_id === match.player1_id ? match.player1_name : match.player2_name}</strong> 🎾</span>
+          )}
         </p>
 
         {error && <div className="alert alert-error">{error}</div>}
@@ -975,19 +1017,23 @@ function ScoreModal({ match, tournament, onClose, onSaved }) {
         )}
 
         <form onSubmit={handleSubmit}>
+          {isOnePoint ? (
+            <div className="alert alert-info mb-2">🎯 Nur ein Punkt wird gespielt – wähle den Gewinner des Ballwechsels.</div>
+          ) : (
           <div className="score-input mb-2">
             {sets.map((s, idx) => {
               const isLastDecider = useMTB && idx === numSets - 1;
               return (
                 <div className="set-row" key={idx}>
-                  <label>{isDoubles ? 'Games' : isLastDecider ? 'Match-TB' : `Satz ${idx + 1}`}</label>
-                  <input type="number" min="0" max={isDoubles ? 99 : isLastDecider ? 99 : 7} value={s.games_player1} onChange={e => handleSetChange(idx, 'games_player1', e.target.value)} placeholder="-" />
+                  <label>{isDoubles ? 'Games' : isTiebreakKO ? `TB ${idx + 1}` : isLastDecider ? 'Match-TB' : `Satz ${idx + 1}`}</label>
+                  <input type="number" min="0" max={isDoubles ? 99 : isTiebreakKO ? 99 : isLastDecider ? 99 : 7} value={s.games_player1} onChange={e => handleSetChange(idx, 'games_player1', e.target.value)} placeholder="-" />
                   <span className="separator">:</span>
-                  <input type="number" min="0" max={isDoubles ? 99 : isLastDecider ? 99 : 7} value={s.games_player2} onChange={e => handleSetChange(idx, 'games_player2', e.target.value)} placeholder="-" />
+                  <input type="number" min="0" max={isDoubles ? 99 : isTiebreakKO ? 99 : isLastDecider ? 99 : 7} value={s.games_player2} onChange={e => handleSetChange(idx, 'games_player2', e.target.value)} placeholder="-" />
                 </div>
               );
             })}
           </div>
+          )}
 
           <div className="form-group">
             <label>Gewinner</label>

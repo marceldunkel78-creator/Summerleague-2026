@@ -413,4 +413,156 @@ function updateDoublesStandings(matchId) {
   }
 }
 
-module.exports = { generateKOBracket, advanceWinner, generateLKDayTournament, generateDoublesTournament, updateDoublesStandings };
+// One Point Slam generieren (KO ohne Setzliste, zufälliger Aufschläger)
+function generateOnePointSlam(tournamentId) {
+  const tournament = db.prepare('SELECT * FROM tournaments WHERE id = ?').get(tournamentId);
+  if (!tournament) throw new Error('Turnier nicht gefunden');
+
+  const registrations = db.prepare(
+    `SELECT tr.*, u.name, u.lk 
+     FROM tournament_registrations tr 
+     JOIN users u ON tr.user_id = u.id 
+     WHERE tr.tournament_id = ? AND tr.status = ?`
+  ).all(tournamentId, 'approved');
+
+  if (registrations.length < 2) throw new Error('Mindestens 2 Spieler benötigt');
+
+  // Zufällig mischen (keine Setzliste)
+  for (let i = registrations.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [registrations[i], registrations[j]] = [registrations[j], registrations[i]];
+  }
+
+  const n = registrations.length;
+  const bracketSize = Math.pow(2, Math.ceil(Math.log2(n)));
+  const totalRounds = Math.log2(bracketSize);
+
+  const transaction = db.transaction(() => {
+    db.prepare('DELETE FROM matches WHERE tournament_id = ?').run(tournamentId);
+    db.prepare('DELETE FROM rounds WHERE tournament_id = ?').run(tournamentId);
+
+    // Runden erstellen
+    const roundNames = [];
+    for (let r = 1; r <= totalRounds; r++) {
+      const remaining = bracketSize / Math.pow(2, r - 1);
+      let name;
+      if (remaining === 2) name = 'Finale';
+      else if (remaining === 4) name = 'Halbfinale';
+      else if (remaining === 8) name = 'Viertelfinale';
+      else name = `Runde ${r} (${remaining}er)`;
+      
+      const result = db.prepare(
+        'INSERT INTO rounds (tournament_id, round_number, name, status) VALUES (?, ?, ?, ?)'
+      ).run(tournamentId, r, name, 'pending');
+      roundNames.push({ id: result.lastInsertRowid, roundNumber: r });
+    }
+
+    // Spieler auf Positionen verteilen (zufällig, bereits gemischt)
+    const positions = new Array(bracketSize).fill(null);
+    for (let i = 0; i < registrations.length; i++) {
+      positions[i] = registrations[i];
+    }
+
+    // Erste Runde Matches erstellen mit zufälligem Aufschläger
+    const firstRound = roundNames[0];
+    const matchesInFirstRound = bracketSize / 2;
+    const matchIds = [];
+
+    for (let i = 0; i < matchesInFirstRound; i++) {
+      const p1 = positions[i * 2] || null;
+      const p2 = positions[i * 2 + 1] || null;
+      
+      // Zufälliger Aufschläger
+      let serverId = null;
+      if (p1 && p2) {
+        serverId = Math.random() < 0.5 ? p1.user_id : p2.user_id;
+      }
+
+      const result = db.prepare(
+        `INSERT INTO matches (tournament_id, round_id, match_number, player1_id, player2_id, bracket_position, server_id) 
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        tournamentId, firstRound.id, i + 1,
+        p1 ? p1.user_id : null,
+        p2 ? p2.user_id : null,
+        i + 1, serverId
+      );
+      matchIds.push(result.lastInsertRowid);
+
+      // Freilos
+      if ((p1 && !p2) || (!p1 && p2)) {
+        const winnerId = p1 ? p1.user_id : p2.user_id;
+        db.prepare('UPDATE matches SET winner_id = ?, result_status = ?, walkover = 1, score = ? WHERE id = ?')
+          .run(winnerId, 'confirmed', 'Freilos', result.lastInsertRowid);
+      }
+    }
+
+    // Folgerunden-Matches erstellen
+    let previousMatchIds = matchIds;
+    for (let r = 1; r < totalRounds; r++) {
+      const round = roundNames[r];
+      const matchesInRound = previousMatchIds.length / 2;
+      const newMatchIds = [];
+
+      for (let i = 0; i < matchesInRound; i++) {
+        const result = db.prepare(
+          `INSERT INTO matches (tournament_id, round_id, match_number, bracket_position) 
+           VALUES (?, ?, ?, ?)`
+        ).run(tournamentId, round.id, i + 1, i + 1);
+        
+        db.prepare('UPDATE matches SET next_match_id = ? WHERE id = ?')
+          .run(result.lastInsertRowid, previousMatchIds[i * 2]);
+        db.prepare('UPDATE matches SET next_match_id = ? WHERE id = ?')
+          .run(result.lastInsertRowid, previousMatchIds[i * 2 + 1]);
+
+        newMatchIds.push(result.lastInsertRowid);
+
+        // Freilos-Gewinner in nächste Runde
+        const m1 = db.prepare('SELECT * FROM matches WHERE id = ?').get(previousMatchIds[i * 2]);
+        const m2 = db.prepare('SELECT * FROM matches WHERE id = ?').get(previousMatchIds[i * 2 + 1]);
+
+        if (m1 && m1.winner_id && m2 && m2.winner_id) {
+          const serverId = Math.random() < 0.5 ? m1.winner_id : m2.winner_id;
+          db.prepare('UPDATE matches SET player1_id = ?, player2_id = ?, server_id = ? WHERE id = ?')
+            .run(m1.winner_id, m2.winner_id, serverId, result.lastInsertRowid);
+        } else if (m1 && m1.winner_id) {
+          db.prepare('UPDATE matches SET player1_id = ? WHERE id = ?')
+            .run(m1.winner_id, result.lastInsertRowid);
+        } else if (m2 && m2.winner_id) {
+          db.prepare('UPDATE matches SET player2_id = ? WHERE id = ?')
+            .run(m2.winner_id, result.lastInsertRowid);
+        }
+      }
+
+      previousMatchIds = newMatchIds;
+    }
+  });
+
+  transaction();
+  return { bracketSize, totalRounds };
+}
+
+// Tiebreak-KO-Turnier generieren (wie normales KO, mit Setzliste nach LK)
+function generateTiebreakKO(tournamentId) {
+  // Nutzt gleiche Logik wie generateKOBracket (Setzliste nach LK)
+  return generateKOBracket(tournamentId);
+}
+
+// advanceWinner erweitern: Zufälligen Aufschläger für One Point Slam setzen
+function advanceOnePointWinner(matchId) {
+  const match = db.prepare('SELECT m.*, t.type FROM matches m JOIN tournaments t ON m.tournament_id = t.id WHERE m.id = ?').get(matchId);
+  if (!match || !match.winner_id || !match.next_match_id) return;
+
+  advanceWinner(matchId);
+
+  // Aufschläger für nächstes Match setzen, wenn beide Spieler stehen
+  if (match.tournament_id) {
+    const nextMatch = db.prepare('SELECT * FROM matches WHERE id = ?').get(match.next_match_id);
+    if (nextMatch && nextMatch.player1_id && nextMatch.player2_id) {
+      const serverId = Math.random() < 0.5 ? nextMatch.player1_id : nextMatch.player2_id;
+      db.prepare('UPDATE matches SET server_id = ? WHERE id = ?').run(serverId, match.next_match_id);
+    }
+  }
+}
+
+module.exports = { generateKOBracket, advanceWinner, generateLKDayTournament, generateDoublesTournament, updateDoublesStandings, generateOnePointSlam, generateTiebreakKO, advanceOnePointWinner };

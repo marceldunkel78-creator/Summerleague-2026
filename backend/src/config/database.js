@@ -55,7 +55,7 @@ function initializeDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       description TEXT,
-      type TEXT NOT NULL CHECK(type IN ('league', 'ko', 'lk_day', 'doubles')),
+      type TEXT NOT NULL CHECK(type IN ('league', 'ko', 'lk_day', 'doubles', 'one_point', 'tiebreak_ko')),
       status TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'registration_open', 'registration_closed', 'draw_complete', 'in_progress', 'completed', 'cancelled')),
       max_participants INTEGER NOT NULL DEFAULT 16,
       
@@ -91,6 +91,7 @@ function initializeDatabase() {
       draw_date TEXT,
       tournament_start TEXT,
       tournament_end TEXT,
+      start_time TEXT,
       location TEXT,
       
       created_by INTEGER REFERENCES admins(id),
@@ -161,6 +162,7 @@ function initializeDatabase() {
       scheduled_date TEXT,
       scheduled_time TEXT,
       court TEXT,
+      server_id INTEGER REFERENCES users(id),
       
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
@@ -244,11 +246,87 @@ function initializeDatabase() {
     { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournaments') WHERE name='entry_fee'", sql: "ALTER TABLE tournaments ADD COLUMN entry_fee TEXT" },
     { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournaments') WHERE name='prize_description'", sql: "ALTER TABLE tournaments ADD COLUMN prize_description TEXT" },
     { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('users') WHERE name='phone'", sql: "ALTER TABLE users ADD COLUMN phone TEXT" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('matches') WHERE name='server_id'", sql: "ALTER TABLE matches ADD COLUMN server_id INTEGER REFERENCES users(id)" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournaments') WHERE name='start_time'", sql: "ALTER TABLE tournaments ADD COLUMN start_time TEXT" },
   ];
   for (const m of migrations) {
     if (db.prepare(m.check).get().cnt === 0) {
       db.exec(m.sql);
     }
+  }
+
+  // Migrate tournaments table CHECK constraint for new types
+  try {
+    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='tournaments'").get();
+    if (tableInfo && tableInfo.sql && !tableInfo.sql.includes('one_point')) {
+      db.pragma('foreign_keys = OFF');
+      db.exec(`
+        ALTER TABLE tournaments RENAME TO tournaments_old;
+      `);
+      // Recreate with updated CHECK
+      db.exec(`
+        CREATE TABLE tournaments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          description TEXT,
+          type TEXT NOT NULL CHECK(type IN ('league', 'ko', 'lk_day', 'doubles', 'one_point', 'tiebreak_ko')),
+          status TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'registration_open', 'registration_closed', 'draw_complete', 'in_progress', 'completed', 'cancelled')),
+          max_participants INTEGER NOT NULL DEFAULT 16,
+          points_win INTEGER DEFAULT 3,
+          points_loss INTEGER DEFAULT 0,
+          points_draw INTEGER DEFAULT 1,
+          lk_handicap_enabled INTEGER DEFAULT 0,
+          lk_handicap_factor REAL DEFAULT 0.5,
+          winning_sets INTEGER DEFAULT 2 CHECK(winning_sets IN (2, 3)),
+          no_ad INTEGER DEFAULT 0,
+          match_tiebreak INTEGER DEFAULT 0,
+          match_tiebreak_at TEXT DEFAULT '1:1',
+          doubles_rounds INTEGER DEFAULT 3,
+          doubles_random_partners INTEGER DEFAULT 0,
+          is_doubles INTEGER DEFAULT 0,
+          doubles_round_duration INTEGER,
+          doubles_start_time TEXT,
+          doubles_courts TEXT,
+          entry_fee TEXT,
+          prize_description TEXT,
+          self_reporting INTEGER DEFAULT 0,
+          dtb_id_required INTEGER DEFAULT 0,
+          registration_deadline TEXT,
+          draw_date TEXT,
+          tournament_start TEXT,
+          tournament_end TEXT,
+          start_time TEXT,
+          location TEXT,
+          created_by INTEGER REFERENCES admins(id),
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
+        )
+      `);
+      db.exec(`INSERT INTO tournaments (
+          id, name, description, type, status, max_participants,
+          points_win, points_loss, points_draw, lk_handicap_enabled, lk_handicap_factor,
+          winning_sets, no_ad, match_tiebreak, match_tiebreak_at,
+          doubles_rounds, doubles_random_partners, is_doubles,
+          doubles_round_duration, doubles_start_time, doubles_courts,
+          entry_fee, prize_description, self_reporting, dtb_id_required,
+          registration_deadline, draw_date, tournament_start, tournament_end,
+          location, created_by, created_at, updated_at
+        ) SELECT
+          id, name, description, type, status, max_participants,
+          points_win, points_loss, points_draw, lk_handicap_enabled, lk_handicap_factor,
+          winning_sets, no_ad, match_tiebreak, match_tiebreak_at,
+          doubles_rounds, doubles_random_partners, is_doubles,
+          doubles_round_duration, doubles_start_time, doubles_courts,
+          entry_fee, prize_description, self_reporting, dtb_id_required,
+          registration_deadline, draw_date, tournament_start, tournament_end,
+          location, created_by, created_at, updated_at
+        FROM tournaments_old`);
+      db.exec(`DROP TABLE tournaments_old`);
+      db.pragma('foreign_keys = ON');
+    }
+  } catch (e) {
+    console.log('Tournament type migration skipped:', e.message);
+    try { db.pragma('foreign_keys = ON'); } catch {}
   }
 
   // Create doubles_standings table if not exists
