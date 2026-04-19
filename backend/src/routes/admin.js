@@ -1,6 +1,10 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
+const Database = require('better-sqlite3');
 const { db } = require('../config/database');
 const { authenticateAdmin } = require('../middleware/auth');
 const { sendRegistrationApprovedEmail } = require('../services/emailService');
@@ -584,6 +588,102 @@ router.get('/email-log', authenticateAdmin, (req, res) => {
     res.json({ logs });
   } catch (err) {
     res.status(500).json({ error: 'Serverfehler.' });
+  }
+});
+
+// === DATENBANK BACKUP ===
+router.get('/backup', authenticateAdmin, (req, res) => {
+  try {
+    const dbPath = path.join(__dirname, '..', '..', 'data', 'summerleague.db');
+    const backupDir = path.join(__dirname, '..', '..', 'data', 'backups');
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const backupFilename = `summerleague-backup-${timestamp}.db`;
+    const backupPath = path.join(backupDir, backupFilename);
+
+    // SQLite Online-Backup via VACUUM INTO
+    db.exec(`VACUUM INTO '${backupPath.replace(/\\/g, '/')}'`);
+
+    // Als Download senden
+    res.download(backupPath, backupFilename, (err) => {
+      if (err) {
+        console.error('Backup-Download Fehler:', err);
+      }
+    });
+  } catch (err) {
+    console.error('Backup Fehler:', err);
+    res.status(500).json({ error: 'Backup fehlgeschlagen: ' + err.message });
+  }
+});
+
+// === DATENBANK WIEDERHERSTELLEN ===
+const restoreUpload = multer({
+  dest: path.join(__dirname, '..', '..', 'data', 'temp'),
+  limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.originalname.endsWith('.db')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Nur .db Dateien sind erlaubt.'), false);
+    }
+  }
+});
+
+router.post('/restore', authenticateAdmin, restoreUpload.single('backup'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Keine Backup-Datei hochgeladen.' });
+    }
+
+    // Validiere, dass die hochgeladene Datei eine gültige SQLite-DB ist
+    let testDb;
+    try {
+      testDb = new Database(req.file.path, { readonly: true });
+      // Prüfe ob die wichtigsten Tabellen existieren
+      const tables = testDb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(t => t.name);
+      const required = ['users', 'admins', 'tournaments', 'matches'];
+      const missing = required.filter(t => !tables.includes(t));
+      if (missing.length > 0) {
+        testDb.close();
+        fs.unlinkSync(req.file.path);
+        return res.status(400).json({ error: `Ungültige Backup-Datei. Fehlende Tabellen: ${missing.join(', ')}` });
+      }
+      testDb.close();
+    } catch (validationErr) {
+      if (testDb) testDb.close();
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: 'Die Datei ist keine gültige SQLite-Datenbank.' });
+    }
+
+    const dbPath = path.join(__dirname, '..', '..', 'data', 'summerleague.db');
+    const backupDir = path.join(__dirname, '..', '..', 'data', 'backups');
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+
+    // Automatisches Backup der aktuellen DB vor Wiederherstellung
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const autoBackupPath = path.join(backupDir, `pre-restore-${timestamp}.db`);
+    db.exec(`VACUUM INTO '${autoBackupPath.replace(/\\/g, '/')}'`);
+
+    // DB schließen, Datei ersetzen, Prozess neustarten
+    db.close();
+    fs.copyFileSync(req.file.path, dbPath);
+    fs.unlinkSync(req.file.path);
+
+    res.json({ message: 'Datenbank wiederhergestellt. Server wird neu gestartet...' });
+
+    // Prozess beenden – Docker restart-Policy startet den Container neu
+    setTimeout(() => process.exit(0), 500);
+  } catch (err) {
+    console.error('Restore Fehler:', err);
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ error: 'Wiederherstellung fehlgeschlagen: ' + err.message });
   }
 });
 

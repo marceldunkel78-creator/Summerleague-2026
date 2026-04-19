@@ -14,7 +14,7 @@ function authenticateUser(req, res, next) {
     if (decoded.role !== 'user') {
       return res.status(403).json({ error: 'Kein Benutzerzugang.' });
     }
-    const user = db.prepare('SELECT id, username, email, name, dtb_id, lk, profile_photo, email_verified, is_active FROM users WHERE id = ?').get(decoded.id);
+    const user = db.prepare('SELECT id, username, email, name, dtb_id, lk, phone, profile_photo, email_verified, is_active FROM users WHERE id = ?').get(decoded.id);
     if (!user || !user.is_active) {
       return res.status(401).json({ error: 'Benutzer nicht gefunden oder deaktiviert.' });
     }

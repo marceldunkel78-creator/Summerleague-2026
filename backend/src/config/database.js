@@ -35,6 +35,7 @@ function initializeDatabase() {
       reset_token_expires INTEGER,
       data_consent INTEGER DEFAULT 0,
       data_consent_date TEXT,
+      phone TEXT,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
@@ -242,6 +243,7 @@ function initializeDatabase() {
     { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournament_registrations') WHERE name='partner_id'", sql: "ALTER TABLE tournament_registrations ADD COLUMN partner_id INTEGER REFERENCES users(id)" },
     { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournaments') WHERE name='entry_fee'", sql: "ALTER TABLE tournaments ADD COLUMN entry_fee TEXT" },
     { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournaments') WHERE name='prize_description'", sql: "ALTER TABLE tournaments ADD COLUMN prize_description TEXT" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('users') WHERE name='phone'", sql: "ALTER TABLE users ADD COLUMN phone TEXT" },
   ];
   for (const m of migrations) {
     if (db.prepare(m.check).get().cnt === 0) {

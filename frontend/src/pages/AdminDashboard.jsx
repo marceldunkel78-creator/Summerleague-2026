@@ -5,6 +5,10 @@ import api from '../api';
 export default function AdminDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [backupMsg, setBackupMsg] = useState('');
+  const [restoreLoading, setRestoreLoading] = useState(false);
+  const [restoreMsg, setRestoreMsg] = useState('');
 
   useEffect(() => {
     const token = localStorage.getItem('adminToken');
@@ -18,6 +22,53 @@ export default function AdminDashboard() {
   if (!data) return <div className="page"><div className="alert alert-error">Fehler beim Laden.</div></div>;
 
   const { stats, recentUsers, recentTournaments } = data;
+
+  const handleBackup = async () => {
+    setBackupLoading(true);
+    setBackupMsg('');
+    try {
+      const res = await api.get('/admin/backup', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+      a.download = `summerleague-backup-${timestamp}.db`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      setBackupMsg('Backup erfolgreich heruntergeladen!');
+    } catch {
+      setBackupMsg('Backup fehlgeschlagen.');
+    } finally {
+      setBackupLoading(false);
+    }
+  };
+
+  const handleRestore = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = '';
+    if (!file.name.endsWith('.db')) {
+      return setRestoreMsg('Nur .db Dateien sind erlaubt.');
+    }
+    if (!confirm('ACHTUNG: Die aktuelle Datenbank wird durch das Backup ersetzt!\n\nVor der Wiederherstellung wird automatisch ein Backup der aktuellen DB erstellt.\n\nFortfahren?')) {
+      return;
+    }
+    setRestoreLoading(true);
+    setRestoreMsg('');
+    try {
+      const formData = new FormData();
+      formData.append('backup', file);
+      const res = await api.post('/admin/restore', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setRestoreMsg(res.data.message);
+      setTimeout(() => window.location.reload(), 3000);
+    } catch (err) {
+      setRestoreMsg(err.response?.data?.error || 'Wiederherstellung fehlgeschlagen.');
+    } finally {
+      setRestoreLoading(false);
+    }
+  };
 
   return (
     <div className="admin-layout">
@@ -84,6 +135,30 @@ export default function AdminDashboard() {
               </div>
             ))}
           </div>
+        </div>
+
+        <div className="card" style={{ marginTop: '1.5rem' }}>
+          <div className="card-header">
+            <h3>🗄️ Datenbank</h3>
+          </div>
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+            Erstelle ein Backup der kompletten Datenbank (Benutzer, Turniere, Ergebnisse).
+          </p>
+          <button className="btn btn-primary" onClick={handleBackup} disabled={backupLoading}>
+            {backupLoading ? 'Backup wird erstellt...' : '💾 Backup herunterladen'}
+          </button>
+          {backupMsg && <div className={`alert ${backupMsg.includes('erfolgreich') ? 'alert-success' : 'alert-error'}`} style={{ marginTop: '0.5rem' }}>{backupMsg}</div>}
+
+          <hr style={{ margin: '1.5rem 0' }} />
+
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+            Stelle eine zuvor gesicherte Datenbank wieder her. Die aktuelle DB wird vorher automatisch gesichert.
+          </p>
+          <label className={`btn btn-danger ${restoreLoading ? 'disabled' : ''}`} style={{ cursor: restoreLoading ? 'not-allowed' : 'pointer' }}>
+            {restoreLoading ? 'Wird wiederhergestellt...' : '⚠️ Backup wiederherstellen'}
+            <input type="file" accept=".db" onChange={handleRestore} disabled={restoreLoading} style={{ display: 'none' }} />
+          </label>
+          {restoreMsg && <div className={`alert ${restoreMsg.includes('wiederhergestellt') ? 'alert-success' : 'alert-error'}`} style={{ marginTop: '0.5rem' }}>{restoreMsg}</div>}
         </div>
       </div>
     </div>

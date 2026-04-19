@@ -1,8 +1,8 @@
 const transporter = require('../config/email');
 const { db } = require('../config/database');
 
-const FROM = process.env.SMTP_FROM || 'marceldunkel78@gmail.com';
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+const FROM = process.env.SMTP_FROM || 'webmaster@tennis-summerleague.de';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://www.tennis-summerleague.de';
 
 function logEmail(recipient, subject, type) {
   try {
@@ -184,11 +184,49 @@ async function sendRegistrationNotificationToAdmin(playerName, playerEmail, tour
   logEmail(adminEmail, mailOptions.subject, 'registration_notification');
 }
 
+// Herausforderung senden
+async function sendChallengeEmail(email, name, challengeInfo) {
+  const tournamentUrl = `${FRONTEND_URL}/tournaments/${challengeInfo.tournamentId}`;
+  const mailOptions = {
+    from: `"Summerleague Tennis" <${FROM}>`,
+    to: email,
+    subject: `Herausforderung - ${challengeInfo.tournamentName}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #2c5530;">🎾 Herausforderung!</h2>
+        <p>Hallo ${name},</p>
+        <p><strong>${challengeInfo.challengerName}</strong> fordert dich zu einem Ligaspiel heraus!</p>
+        <div style="background: #f0f7f0; padding: 15px; border-radius: 8px; margin: 20px 0;">
+          <p><strong>Turnier:</strong> ${challengeInfo.tournamentName}</p>
+          <p><strong>Vorgeschlagener Ort:</strong> ${challengeInfo.location}</p>
+          <p><strong>Vorgeschlagene Zeit:</strong> ${challengeInfo.proposedDate} um ${challengeInfo.proposedTime} Uhr</p>
+          ${challengeInfo.message ? `<p><strong>Nachricht:</strong> ${challengeInfo.message}</p>` : ''}
+        </div>
+        <p><strong>Kontaktmöglichkeiten von ${challengeInfo.challengerName}:</strong></p>
+        <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 10px 0;">
+          ${challengeInfo.challengerPhone ? `<p>📞 Telefon: <a href="tel:${challengeInfo.challengerPhone}">${challengeInfo.challengerPhone}</a></p>` : ''}
+          <p>✉️ E-Mail: <a href="mailto:${challengeInfo.challengerEmail}">${challengeInfo.challengerEmail}</a></p>
+        </div>
+        <p>Bitte nimm Kontakt auf, um einen Termin zu vereinbaren.</p>
+        <div style="text-align: center; margin: 20px 0;">
+          <a href="${tournamentUrl}" style="background: #2c5530; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px;">Zum Turnier</a>
+        </div>
+        <hr style="margin-top: 30px;">
+        <p style="color: #888; font-size: 12px;">Summerleague Tennis Verwaltung</p>
+      </div>
+    `
+  };
+
+  await transporter.sendMail(mailOptions);
+  logEmail(email, mailOptions.subject, 'challenge');
+}
+
 module.exports = {
   sendVerificationEmail,
   sendPasswordResetEmail,
   sendResultConfirmationEmail,
   sendDisputeNotificationToAdmin,
   sendRegistrationApprovedEmail,
-  sendRegistrationNotificationToAdmin
+  sendRegistrationNotificationToAdmin,
+  sendChallengeEmail
 };

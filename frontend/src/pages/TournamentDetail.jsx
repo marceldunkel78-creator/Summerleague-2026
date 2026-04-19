@@ -17,6 +17,7 @@ export default function TournamentDetail() {
   const [showScoreModal, setShowScoreModal] = useState(null);
   const [tabInit, setTabInit] = useState(false);
   const [partnerName, setPartnerName] = useState('');
+  const [challengeTarget, setChallengeTarget] = useState(null);
 
   const load = async () => {
     try {
@@ -164,7 +165,7 @@ export default function TournamentDetail() {
         <div className="card">
           <div className="table-wrapper">
             <table>
-              <thead><tr><th>#</th><th>Spieler</th><th>LK</th>{tournament.type === 'ko' && <th>Setzplatz</th>}</tr></thead>
+              <thead><tr><th>#</th><th>Spieler</th><th>LK</th>{tournament.type === 'ko' && <th>Setzplatz</th>}{tournament.type === 'league' && user && myRegistration?.status === 'approved' && <th>Aktion</th>}</tr></thead>
               <tbody>
                 {participants.map((p, i) => (
                   <tr key={p.id}>
@@ -183,6 +184,15 @@ export default function TournamentDetail() {
                     </td>
                     <td>{p.lk}</td>
                     {tournament.type === 'ko' && <td>{p.seed_number || '-'}</td>}
+                    {tournament.type === 'league' && user && myRegistration?.status === 'approved' && (
+                      <td>
+                        {p.id !== user.id && (
+                          <button className="btn btn-sm btn-primary" onClick={() => setChallengeTarget(p)}>
+                            Herausfordern
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -275,6 +285,15 @@ export default function TournamentDetail() {
       {showScoreModal && (
         <ScoreModal match={showScoreModal} tournament={tournament} onClose={() => setShowScoreModal(null)} onSaved={() => { setShowScoreModal(null); load(); }} />
       )}
+
+      {challengeTarget && (
+        <ChallengeModal
+          opponent={challengeTarget}
+          tournamentId={tournament.id}
+          onClose={() => setChallengeTarget(null)}
+          onSent={(message) => { setChallengeTarget(null); setMsg(message); }}
+        />
+      )}
     </div>
   );
 }
@@ -284,6 +303,85 @@ function InfoItem({ label, value }) {
     <div style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
       <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 2 }}>{label}</div>
       <div style={{ fontWeight: 600 }}>{value}</div>
+    </div>
+  );
+}
+
+function ChallengeModal({ opponent, tournamentId, onClose, onSent }) {
+  const [form, setForm] = useState({ location: '', proposedDate: '', proposedTime: '', message: '' });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!form.location || !form.proposedDate || !form.proposedTime) {
+      return setError('Ort, Datum und Uhrzeit sind erforderlich.');
+    }
+    setLoading(true);
+    try {
+      const res = await api.post(`/tournaments/${tournamentId}/challenge`, {
+        opponentId: opponent.id,
+        location: form.location,
+        proposedDate: form.proposedDate,
+        proposedTime: form.proposedTime,
+        message: form.message
+      });
+      onSent(res.data.message);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Fehler beim Senden.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>🎾 Herausforderung</h2>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <p className="mb-2">
+          Du forderst <strong>{opponent.name}</strong> (LK {opponent.lk}) heraus.
+        </p>
+        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+          Deine Kontaktdaten (E-Mail und Telefonnummer) werden dem Gegner per E-Mail mitgeteilt.
+        </p>
+
+        {error && <div className="alert alert-error">{error}</div>}
+
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label>Vorgeschlagener Ort *</label>
+            <input type="text" value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))}
+              required placeholder="z.B. Tennisclub Musterstadt, Platz 3" />
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Datum *</label>
+              <input type="date" value={form.proposedDate} onChange={e => setForm(f => ({ ...f, proposedDate: e.target.value }))}
+                required min={new Date().toISOString().split('T')[0]} />
+            </div>
+            <div className="form-group">
+              <label>Uhrzeit *</label>
+              <input type="time" value={form.proposedTime} onChange={e => setForm(f => ({ ...f, proposedTime: e.target.value }))}
+                required />
+            </div>
+          </div>
+          <div className="form-group">
+            <label>Nachricht (optional)</label>
+            <textarea value={form.message} onChange={e => setForm(f => ({ ...f, message: e.target.value }))}
+              rows={3} placeholder="z.B. Alternativtermine, besondere Hinweise..." />
+          </div>
+          <div className="flex gap-1" style={{ justifyContent: 'flex-end' }}>
+            <button type="button" className="btn btn-outline" onClick={onClose}>Abbrechen</button>
+            <button type="submit" className="btn btn-primary" disabled={loading}>
+              {loading ? 'Wird gesendet...' : 'Herausforderung senden'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

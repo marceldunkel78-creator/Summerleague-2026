@@ -10,7 +10,7 @@ export default function Home() {
     <div>
       <div className="hero">
         <div className="page">
-          <h1>🎾 Summerleague Tennis 2026</h1>
+          <h1>🎾 Summerleague Tennis </h1>
           <p>
             Willkommen bei der Tennis Summerleague! Melde dich an, registriere dich für Turniere 
             und spiele gegen andere Tennisbegeisterte in verschiedenen Turniermodi.

@@ -62,9 +62,9 @@ router.post('/register', async (req, res) => {
 
     // User erstellen
     const result = db.prepare(
-      `INSERT INTO users (username, email, password_hash, name, dtb_id, lk, data_consent, data_consent_date, verification_code, verification_code_expires) 
-       VALUES (?, ?, ?, ?, ?, ?, 1, datetime('now'), ?, ?)`
-    ).run(username, email, password_hash, name, dtb_id || null, lkNum, verificationCode, codeExpires);
+      `INSERT INTO users (username, email, password_hash, name, dtb_id, lk, phone, data_consent, data_consent_date, verification_code, verification_code_expires) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), ?, ?)`
+    ).run(username, email, password_hash, name, dtb_id || null, lkNum, phone, verificationCode, codeExpires);
 
     // Verifizierungs-E-Mail senden
     try {
@@ -184,6 +184,7 @@ router.post('/login', async (req, res) => {
         name: user.name,
         dtb_id: user.dtb_id,
         lk: user.lk,
+        phone: user.phone,
         profile_photo: user.profile_photo
       }
     });
@@ -266,6 +267,7 @@ router.put('/me', authenticateUser, async (req, res) => {
 
     if (name) { updates.push('name = ?'); params.push(name); }
     if (lk !== undefined) { updates.push('lk = ?'); params.push(lk); }
+    if (req.body.phone !== undefined) { updates.push('phone = ?'); params.push(req.body.phone); }
 
     if (updates.length === 0) {
       return res.status(400).json({ error: 'Keine Änderungen angegeben.' });
@@ -276,7 +278,7 @@ router.put('/me', authenticateUser, async (req, res) => {
 
     db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
-    const updated = db.prepare('SELECT id, username, email, name, dtb_id, lk, profile_photo FROM users WHERE id = ?').get(req.user.id);
+    const updated = db.prepare('SELECT id, username, email, name, dtb_id, lk, phone, profile_photo FROM users WHERE id = ?').get(req.user.id);
     res.json({ user: updated });
   } catch (err) {
     console.error('Profil-Update Fehler:', err);

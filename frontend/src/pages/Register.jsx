@@ -5,7 +5,7 @@ import api from '../api';
 export default function Register() {
   const [form, setForm] = useState({
     username: '', email: '', password: '', passwordConfirm: '',
-    name: '', dtb_id: '', lk: '25', data_consent: false
+    name: '', dtb_id: '', lk: '25', phone: '', data_consent: false
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -36,6 +36,10 @@ export default function Register() {
       return setError('Du musst der Datenverarbeitung zustimmen.');
     }
 
+    if (!form.phone.trim()) {
+      return setError('Telefonnummer ist erforderlich.');
+    }
+
     setLoading(true);
     try {
       await api.post('/auth/register', {
@@ -45,6 +49,7 @@ export default function Register() {
         name: form.name,
         dtb_id: form.dtb_id || undefined,
         lk: parseFloat(form.lk),
+        phone: form.phone,
         data_consent: true
       });
       navigate(`/verify-email?email=${encodeURIComponent(form.email)}`);
@@ -73,6 +78,12 @@ export default function Register() {
           <div className="form-group">
             <label>E-Mail-Adresse *</label>
             <input type="email" name="email" value={form.email} onChange={handleChange} required placeholder="max@beispiel.de" />
+          </div>
+
+          <div className="form-group">
+            <label>Telefonnummer *</label>
+            <input type="tel" name="phone" value={form.phone} onChange={handleChange} required placeholder="0171 1234567" />
+            <div className="hint">Wird für die Spielabsprache benötigt</div>
           </div>
 
           <div className="form-group">

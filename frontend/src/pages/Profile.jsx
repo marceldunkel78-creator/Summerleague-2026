@@ -4,7 +4,7 @@ import api from '../api';
 
 export default function Profile() {
   const { user, updateUser, logout } = useAuth();
-  const [form, setForm] = useState({ name: '', lk: '' });
+  const [form, setForm] = useState({ name: '', lk: '', phone: '' });
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
   const [tab, setTab] = useState('profile');
   const [msg, setMsg] = useState('');
@@ -14,7 +14,7 @@ export default function Profile() {
 
   useEffect(() => {
     if (user) {
-      setForm({ name: user.name || '', lk: user.lk || 25 });
+      setForm({ name: user.name || '', lk: user.lk || 25, phone: user.phone || '' });
     }
     loadData();
   }, [user]);
@@ -34,7 +34,7 @@ export default function Profile() {
     e.preventDefault();
     setMsg(''); setError('');
     try {
-      const res = await api.put('/auth/me', { name: form.name, lk: parseFloat(form.lk) });
+      const res = await api.put('/auth/me', { name: form.name, lk: parseFloat(form.lk), phone: form.phone });
       updateUser(res.data.user);
       setMsg('Profil aktualisiert!');
     } catch (err) {
@@ -127,6 +127,11 @@ export default function Profile() {
             <div className="form-group">
               <label>Leistungsklasse (LK)</label>
               <input type="number" step="0.1" min="1" max="25" value={form.lk} onChange={e => setForm(f => ({...f, lk: e.target.value}))} />
+            </div>
+            <div className="form-group">
+              <label>Telefonnummer</label>
+              <input type="tel" value={form.phone} onChange={e => setForm(f => ({...f, phone: e.target.value}))} placeholder="0171 1234567" />
+              <div className="hint">Wird für die Spielabsprache benötigt</div>
             </div>
             <div className="form-group">
               <label>E-Mail</label>

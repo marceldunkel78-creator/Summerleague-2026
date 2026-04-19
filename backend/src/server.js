@@ -8,6 +8,9 @@ const { initializeDatabase } = require('./config/database');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Trust proxy (hinter Nginx)
+app.set('trust proxy', 1);
+
 // Datenbank initialisieren
 initializeDatabase();
 

@@ -1,7 +1,7 @@
 const express = require('express');
 const { authenticateUser, optionalAuth } = require('../middleware/auth');
 const { db } = require('../config/database');
-const { sendRegistrationNotificationToAdmin } = require('../services/emailService');
+const { sendRegistrationNotificationToAdmin, sendChallengeEmail } = require('../services/emailService');
 
 const router = express.Router();
 
@@ -217,6 +217,65 @@ router.delete('/:id/register', authenticateUser, (req, res) => {
     res.json({ message: 'Anmeldung zurückgezogen.' });
   } catch (err) {
     res.status(500).json({ error: 'Serverfehler.' });
+  }
+});
+
+// === HERAUSFORDERUNG SENDEN ===
+router.post('/:id/challenge', authenticateUser, async (req, res) => {
+  try {
+    const { opponentId, location, proposedDate, proposedTime, message } = req.body;
+
+    if (!opponentId || !location || !proposedDate || !proposedTime) {
+      return res.status(400).json({ error: 'Ort, Datum und Uhrzeit sind erforderlich.' });
+    }
+
+    const tournament = db.prepare('SELECT * FROM tournaments WHERE id = ?').get(req.params.id);
+    if (!tournament) {
+      return res.status(404).json({ error: 'Turnier nicht gefunden.' });
+    }
+
+    if (tournament.type !== 'league') {
+      return res.status(400).json({ error: 'Herausforderungen sind nur im Liga-Modus möglich.' });
+    }
+
+    if (parseInt(opponentId) === req.user.id) {
+      return res.status(400).json({ error: 'Du kannst dich nicht selbst herausfordern.' });
+    }
+
+    // Prüfe ob beide Spieler im Turnier sind
+    const myReg = db.prepare('SELECT * FROM tournament_registrations WHERE tournament_id = ? AND user_id = ? AND status = ?')
+      .get(tournament.id, req.user.id, 'approved');
+    const oppReg = db.prepare('SELECT * FROM tournament_registrations WHERE tournament_id = ? AND user_id = ? AND status = ?')
+      .get(tournament.id, parseInt(opponentId), 'approved');
+
+    if (!myReg || !oppReg) {
+      return res.status(400).json({ error: 'Beide Spieler müssen für das Turnier zugelassen sein.' });
+    }
+
+    const opponent = db.prepare('SELECT id, name, email, phone FROM users WHERE id = ?').get(parseInt(opponentId));
+    if (!opponent) {
+      return res.status(404).json({ error: 'Gegner nicht gefunden.' });
+    }
+
+    // Sanitize message to prevent XSS in email
+    const safeMessage = message ? message.replace(/[<>]/g, '') : '';
+
+    await sendChallengeEmail(opponent.email, opponent.name, {
+      tournamentId: tournament.id,
+      tournamentName: tournament.name,
+      challengerName: req.user.name,
+      challengerEmail: req.user.email,
+      challengerPhone: req.user.phone,
+      location: location.replace(/[<>]/g, ''),
+      proposedDate: new Date(proposedDate).toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }),
+      proposedTime: proposedTime,
+      message: safeMessage
+    });
+
+    res.json({ message: `Herausforderung an ${opponent.name} gesendet!` });
+  } catch (err) {
+    console.error('Herausforderung Fehler:', err);
+    res.status(500).json({ error: 'Fehler beim Senden der Herausforderung.' });
   }
 });
 
