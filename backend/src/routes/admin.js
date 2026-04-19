@@ -5,7 +5,7 @@ const { db } = require('../config/database');
 const { authenticateAdmin } = require('../middleware/auth');
 const { sendRegistrationApprovedEmail } = require('../services/emailService');
 const { generateRoundRobin, updateLeagueStandings, getLeagueStandings } = require('../services/leagueService');
-const { generateKOBracket, advanceWinner, generateLKDayTournament, generateDoublesTournament } = require('../services/bracketService');
+const { generateKOBracket, advanceWinner, generateLKDayTournament, generateDoublesTournament, updateDoublesStandings } = require('../services/bracketService');
 
 const router = express.Router();
 
@@ -156,7 +156,9 @@ router.post('/tournaments', authenticateAdmin, (req, res) => {
       name, description, type, status, max_participants,
       points_win, points_loss, points_draw, lk_handicap_enabled, lk_handicap_factor,
       winning_sets, no_ad, match_tiebreak, match_tiebreak_at,
-      doubles_rounds, doubles_random_partners,
+      doubles_rounds, doubles_random_partners, is_doubles,
+      doubles_round_duration, doubles_start_time, doubles_courts,
+      entry_fee, prize_description,
       self_reporting, dtb_id_required, registration_deadline, draw_date,
       tournament_start, tournament_end, location
     } = req.body;
@@ -171,15 +173,19 @@ router.post('/tournaments', authenticateAdmin, (req, res) => {
     const result = db.prepare(`
       INSERT INTO tournaments (name, description, type, max_participants, points_win, points_loss, points_draw,
         lk_handicap_enabled, lk_handicap_factor, winning_sets, no_ad, match_tiebreak, match_tiebreak_at,
-        doubles_rounds, doubles_random_partners, self_reporting, dtb_id_required, registration_deadline, draw_date,
+        doubles_rounds, doubles_random_partners, is_doubles, doubles_round_duration, doubles_start_time, doubles_courts,
+        entry_fee, prize_description,
+        self_reporting, dtb_id_required, registration_deadline, draw_date,
         tournament_start, tournament_end, location, created_by, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       name, description || null, type, max_participants || 16,
       points_win || 3, points_loss || 0, points_draw || 1,
       lk_handicap_enabled ? 1 : 0, lk_handicap_factor || 0.5,
       winning_sets || 2, no_ad ? 1 : 0, match_tiebreak ? 1 : 0, match_tiebreak_at || '1:1',
-      doubles_rounds || 3, doubles_random_partners ? 1 : 0,
+      doubles_rounds || 3, doubles_random_partners ? 1 : 0, is_doubles ? 1 : 0,
+      doubles_round_duration || null, doubles_start_time || null, doubles_courts || null,
+      entry_fee || null, prize_description || null,
       self_reporting ? 1 : 0, dtb_id_required ? 1 : 0, registration_deadline || null, draw_date || null,
       tournament_start || null, tournament_end || null, location || null,
       req.admin.id, initialStatus
@@ -201,7 +207,10 @@ router.put('/tournaments/:id', authenticateAdmin, (req, res) => {
       'name', 'description', 'type', 'status', 'max_participants',
       'points_win', 'points_loss', 'points_draw', 'lk_handicap_enabled', 'lk_handicap_factor',
       'winning_sets', 'no_ad', 'match_tiebreak', 'match_tiebreak_at',
-      'doubles_rounds', 'doubles_random_partners', 'self_reporting', 'dtb_id_required',
+      'doubles_rounds', 'doubles_random_partners', 'is_doubles',
+      'doubles_round_duration', 'doubles_start_time', 'doubles_courts',
+      'entry_fee', 'prize_description',
+      'self_reporting', 'dtb_id_required',
       'registration_deadline', 'draw_date', 'tournament_start', 'tournament_end', 'location'
     ];
 
@@ -246,9 +255,11 @@ router.delete('/tournaments/:id', authenticateAdmin, (req, res) => {
 router.get('/tournaments/:id/registrations', authenticateAdmin, (req, res) => {
   try {
     const registrations = db.prepare(`
-      SELECT tr.*, u.name, u.username, u.email, u.dtb_id, u.lk, u.profile_photo
+      SELECT tr.*, u.name, u.username, u.email, u.dtb_id, u.lk, u.profile_photo,
+             p.name as linked_partner_name
       FROM tournament_registrations tr
       JOIN users u ON tr.user_id = u.id
+      LEFT JOIN users p ON tr.partner_id = p.id
       WHERE tr.tournament_id = ?
       ORDER BY tr.created_at ASC
     `).all(req.params.id);
@@ -276,6 +287,7 @@ router.put('/registrations/:regId', authenticateAdmin, async (req, res) => {
     const params = [];
     if (status) { updates.push('status = ?'); params.push(status); }
     if (seed_number !== undefined) { updates.push('seed_number = ?'); params.push(seed_number); }
+    if (req.body.partner_id !== undefined) { updates.push('partner_id = ?'); params.push(req.body.partner_id); }
     updates.push("updated_at = datetime('now')");
     params.push(reg.id);
 
@@ -292,6 +304,39 @@ router.put('/registrations/:regId', authenticateAdmin, async (req, res) => {
 
     res.json({ message: 'Anmeldung aktualisiert.' });
   } catch (err) {
+    res.status(500).json({ error: 'Serverfehler.' });
+  }
+});
+
+// === AUTO-SETZLISTE FÜR LK-TAGESTURNIER ===
+router.post('/tournaments/:id/auto-seed', authenticateAdmin, (req, res) => {
+  try {
+    const tournament = db.prepare('SELECT * FROM tournaments WHERE id = ?').get(req.params.id);
+    if (!tournament) return res.status(404).json({ error: 'Turnier nicht gefunden.' });
+    if (tournament.type !== 'lk_day') return res.status(400).json({ error: 'Auto-Setzliste nur für LK-Tagesturniere.' });
+
+    const approved = db.prepare(`
+      SELECT tr.id, u.lk FROM tournament_registrations tr
+      JOIN users u ON tr.user_id = u.id
+      WHERE tr.tournament_id = ? AND tr.status = 'approved'
+      ORDER BY u.lk ASC
+    `).all(tournament.id);
+
+    // Bei gleicher LK: Zufallsreihenfolge
+    const shuffled = [...approved];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    // Stabil nach LK sortieren (niedrigste = beste = Setzplatz 1)
+    shuffled.sort((a, b) => (a.lk || 99) - (b.lk || 99));
+
+    const update = db.prepare('UPDATE tournament_registrations SET seed_number = ? WHERE id = ?');
+    shuffled.forEach((r, i) => update.run(i + 1, r.id));
+
+    res.json({ message: `Setzliste für ${shuffled.length} Spieler erstellt.` });
+  } catch (err) {
+    console.error('Auto-Seed Fehler:', err);
     res.status(500).json({ error: 'Serverfehler.' });
   }
 });
@@ -318,6 +363,18 @@ router.post('/tournaments/:id/draw', authenticateAdmin, (req, res) => {
         result = { success: true };
         break;
       case 'doubles':
+        // Bei fester Partnerzuordnung: Prüfe ob alle zugelassenen Spieler einen verknüpften Partner haben
+        if (!tournament.doubles_random_partners) {
+          const unlinked = db.prepare(
+            `SELECT tr.id, u.name FROM tournament_registrations tr
+             JOIN users u ON tr.user_id = u.id
+             WHERE tr.tournament_id = ? AND tr.status = 'approved' AND tr.partner_id IS NULL`
+          ).all(tournament.id);
+          if (unlinked.length > 0) {
+            const names = unlinked.map(u => u.name).join(', ');
+            return res.status(400).json({ error: `Folgende Spieler haben noch keinen verknüpften Partner: ${names}` });
+          }
+        }
         generateDoublesTournament(tournament.id);
         result = { success: true };
         break;
@@ -354,6 +411,26 @@ router.put('/matches/:matchId/schedule', authenticateAdmin, (req, res) => {
     res.json({ message: 'Spielplan aktualisiert.' });
   } catch (err) {
     console.error('Schedule Update Fehler:', err);
+    res.status(500).json({ error: 'Serverfehler.' });
+  }
+});
+
+// Admin-Endpunkt: Runden-Spielplan (Datum, Uhrzeit, Dauer, Ort) setzen
+router.put('/rounds/:roundId/schedule', authenticateAdmin, (req, res) => {
+  try {
+    const { scheduled_date, scheduled_time, scheduled_duration, location } = req.body;
+    const round = db.prepare('SELECT id FROM rounds WHERE id = ?').get(req.params.roundId);
+    if (!round) return res.status(404).json({ error: 'Runde nicht gefunden.' });
+
+    db.prepare(`
+      UPDATE rounds 
+      SET scheduled_date = ?, scheduled_time = ?, scheduled_duration = ?, location = ?
+      WHERE id = ?
+    `).run(scheduled_date || null, scheduled_time || null, scheduled_duration || null, location || null, round.id);
+
+    res.json({ message: 'Rundenplan aktualisiert.' });
+  } catch (err) {
+    console.error('Round Schedule Update Fehler:', err);
     res.status(500).json({ error: 'Serverfehler.' });
   }
 });
@@ -458,6 +535,9 @@ router.put('/matches/:matchId', authenticateAdmin, (req, res) => {
     }
     if (match.tournament_type === 'ko' && winnerId) {
       advanceWinner(match.id);
+    }
+    if (match.tournament_type === 'doubles' && winnerId) {
+      updateDoublesStandings(match.id);
     }
     res.json({ message: 'Match aktualisiert.' });
   } catch (err) {

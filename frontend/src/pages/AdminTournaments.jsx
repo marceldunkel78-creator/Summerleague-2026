@@ -84,6 +84,8 @@ function CreateTournamentModal({ onClose, onCreated, headers }) {
     lk_handicap_enabled: false, lk_handicap_factor: 0.5,
     winning_sets: 2, no_ad: false, match_tiebreak: false, match_tiebreak_at: '1:1',
     doubles_rounds: 3, doubles_random_partners: false,
+    doubles_round_duration: '', doubles_start_time: '', doubles_courts: '',
+    entry_fee: '', prize_description: '',
     self_reporting: true, dtb_id_required: false, registration_deadline: '', draw_date: '',
     tournament_start: '', tournament_end: '', location: ''
   });
@@ -108,7 +110,10 @@ function CreateTournamentModal({ onClose, onCreated, headers }) {
         points_draw: parseInt(form.points_draw),
         lk_handicap_factor: parseFloat(form.lk_handicap_factor),
         winning_sets: parseInt(form.winning_sets),
-        doubles_rounds: parseInt(form.doubles_rounds)
+        doubles_rounds: parseInt(form.doubles_rounds),
+        doubles_round_duration: form.doubles_round_duration ? parseInt(form.doubles_round_duration) : null,
+        doubles_start_time: form.doubles_start_time || null,
+        doubles_courts: form.doubles_courts || null
       }, { headers });
       onCreated();
     } catch (err) {
@@ -171,6 +176,17 @@ function CreateTournamentModal({ onClose, onCreated, headers }) {
             </div>
           </div>
 
+          <div className="form-row">
+            <div className="form-group">
+              <label>Anmeldegebühr</label>
+              <input type="text" name="entry_fee" value={form.entry_fee} onChange={handleChange} placeholder="z.B. 15€" />
+            </div>
+            <div className="form-group">
+              <label>Preisgeld / Preise</label>
+              <input type="text" name="prize_description" value={form.prize_description} onChange={handleChange} placeholder="z.B. Pokal + 100€ für den Sieger" />
+            </div>
+          </div>
+
           <h3 style={{ margin: '1.5rem 0 1rem', color: 'var(--primary)' }}>📅 Termine</h3>
           <div className="form-row">
             <div className="form-group">
@@ -194,32 +210,36 @@ function CreateTournamentModal({ onClose, onCreated, headers }) {
           </div>
 
           <h3 style={{ margin: '1.5rem 0 1rem', color: 'var(--primary)' }}>🎾 Spielregeln</h3>
-          <div className="form-row">
-            <div className="form-group">
-              <label>Gewinnsätze</label>
-              <select name="winning_sets" value={form.winning_sets} onChange={handleChange}>
-                <option value="2">2 Gewinnsätze</option>
-                <option value="3">3 Gewinnsätze</option>
-              </select>
+          {form.type !== 'doubles' && (
+            <div className="form-row">
+              <div className="form-group">
+                <label>Gewinnsätze</label>
+                <select name="winning_sets" value={form.winning_sets} onChange={handleChange}>
+                  <option value="2">2 Gewinnsätze</option>
+                  <option value="3">3 Gewinnsätze</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Match-Tiebreak bei</label>
+                <select name="match_tiebreak_at" value={form.match_tiebreak_at} onChange={handleChange}>
+                  <option value="1:1">1:1 (bei 2 Gewinnsätzen)</option>
+                  <option value="2:2">2:2 (bei 3 Gewinnsätzen)</option>
+                </select>
+              </div>
             </div>
-            <div className="form-group">
-              <label>Match-Tiebreak bei</label>
-              <select name="match_tiebreak_at" value={form.match_tiebreak_at} onChange={handleChange}>
-                <option value="1:1">1:1 (bei 2 Gewinnsätzen)</option>
-                <option value="2:2">2:2 (bei 3 Gewinnsätzen)</option>
-              </select>
-            </div>
-          </div>
+          )}
 
           <div className="flex gap-3">
             <div className="checkbox-group">
               <input type="checkbox" name="no_ad" id="no_ad" checked={form.no_ad} onChange={handleChange} />
               <label htmlFor="no_ad">No-Ad Scoring</label>
             </div>
-            <div className="checkbox-group">
-              <input type="checkbox" name="match_tiebreak" id="match_tiebreak" checked={form.match_tiebreak} onChange={handleChange} />
-              <label htmlFor="match_tiebreak">Match-Tiebreak</label>
-            </div>
+            {form.type !== 'doubles' && (
+              <div className="checkbox-group">
+                <input type="checkbox" name="match_tiebreak" id="match_tiebreak" checked={form.match_tiebreak} onChange={handleChange} />
+                <label htmlFor="match_tiebreak">Match-Tiebreak</label>
+              </div>
+            )}
             <div className="checkbox-group">
               <input type="checkbox" name="self_reporting" id="self_reporting" checked={form.self_reporting} onChange={handleChange} />
               <label htmlFor="self_reporting">Selbsteintragung</label>
@@ -260,9 +280,25 @@ function CreateTournamentModal({ onClose, onCreated, headers }) {
           {form.type === 'doubles' && (
             <>
               <h3 style={{ margin: '1.5rem 0 1rem', color: 'var(--primary)' }}>👥 Doppel-Einstellungen</h3>
-              <div className="form-group">
-                <label>Anzahl Runden</label>
-                <input type="number" name="doubles_rounds" value={form.doubles_rounds} onChange={handleChange} min="1" />
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Anzahl Runden</label>
+                  <input type="number" name="doubles_rounds" value={form.doubles_rounds} onChange={handleChange} min="1" />
+                </div>
+                <div className="form-group">
+                  <label>Rundendauer (Min.)</label>
+                  <input type="number" name="doubles_round_duration" value={form.doubles_round_duration} onChange={handleChange} min="10" step="5" placeholder="z.B. 30" />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Start 1. Runde</label>
+                  <input type="time" name="doubles_start_time" value={form.doubles_start_time} onChange={handleChange} />
+                </div>
+                <div className="form-group">
+                  <label>Plätze (Nummern, z.B. 1,2,3)</label>
+                  <input type="text" name="doubles_courts" value={form.doubles_courts} onChange={handleChange} placeholder="1,2,3" />
+                </div>
               </div>
               <div className="checkbox-group">
                 <input type="checkbox" name="doubles_random_partners" id="dbl_rnd" checked={form.doubles_random_partners} onChange={handleChange} />

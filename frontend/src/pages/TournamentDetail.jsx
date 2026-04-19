@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api';
@@ -16,6 +16,7 @@ export default function TournamentDetail() {
   const [error, setError] = useState('');
   const [showScoreModal, setShowScoreModal] = useState(null);
   const [tabInit, setTabInit] = useState(false);
+  const [partnerName, setPartnerName] = useState('');
 
   const load = async () => {
     try {
@@ -25,6 +26,8 @@ export default function TournamentDetail() {
       if (!tabInit) {
         const d = res.data;
         if (d.tournament.type === 'league' && d.standings?.length > 0) {
+          setTab('standings');
+        } else if (d.tournament.type === 'doubles' && d.doublesStandings?.length > 0) {
           setTab('standings');
         } else if (d.matches?.length > 0) {
           setTab('matches');
@@ -42,8 +45,11 @@ export default function TournamentDetail() {
   const handleRegister = async () => {
     setMsg(''); setError('');
     try {
-      const res = await api.post(`/tournaments/${id}/register`);
+      const body = {};
+      if (partnerName.trim()) body.partner_name = partnerName.trim();
+      const res = await api.post(`/tournaments/${id}/register`, body);
       setMsg(res.data.message);
+      setPartnerName('');
       load();
     } catch (err) { setError(err.response?.data?.error || 'Anmeldung fehlgeschlagen.'); }
   };
@@ -60,7 +66,7 @@ export default function TournamentDetail() {
   if (loading) return <div className="loading"><div className="spinner"></div></div>;
   if (!data?.tournament) return <div className="page"><div className="alert alert-error">Turnier nicht gefunden.</div></div>;
 
-  const { tournament, participants, rounds, matches, standings, myRegistration } = data;
+  const { tournament, participants, rounds, matches, standings, doublesStandings, myRegistration } = data;
 
   return (
     <div className="page">
@@ -74,7 +80,16 @@ export default function TournamentDetail() {
             </div>
           </div>
           {user && !myRegistration && tournament.status === 'registration_open' && (
-            <button className="btn btn-primary btn-lg" onClick={handleRegister}>Anmelden</button>
+            <div className="flex gap-1" style={{ alignItems: 'flex-end' }}>
+              {tournament.type === 'doubles' && !tournament.doubles_random_partners && (
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label style={{ fontSize: '0.8rem' }}>Partnername</label>
+                  <input type="text" placeholder="Name des Partners" value={partnerName}
+                    onChange={e => setPartnerName(e.target.value)} style={{ width: 180, padding: '8px 12px' }} />
+                </div>
+              )}
+              <button className="btn btn-primary btn-lg" onClick={handleRegister}>Anmelden</button>
+            </div>
           )}
           {myRegistration && myRegistration.status !== 'withdrawn' && tournament.status === 'registration_open' && (
             <button className="btn btn-outline" onClick={handleWithdraw}>Abmelden</button>
@@ -94,7 +109,7 @@ export default function TournamentDetail() {
       )}
 
       <div className="tabs">
-        {(tournament.type === 'league' && standings.length > 0) && (
+        {((tournament.type === 'league' && standings.length > 0) || (tournament.type === 'doubles' && doublesStandings?.length > 0)) && (
           <button className={`tab ${tab === 'standings' ? 'active' : ''}`} onClick={() => setTab('standings')}>Tabelle</button>
         )}
         {matches.length > 0 && (
@@ -115,15 +130,17 @@ export default function TournamentDetail() {
             <InfoItem label="Typ" value={typeLabels[tournament.type]} />
             <InfoItem label="Max. Teilnehmer" value={tournament.max_participants} />
             <InfoItem label="Ort" value={tournament.location || '-'} />
+            {tournament.entry_fee && <InfoItem label="Anmeldegebühr" value={tournament.entry_fee} />}
+            {tournament.prize_description && <InfoItem label="Preisgeld / Preise" value={tournament.prize_description} />}
             <InfoItem label="Turnier-Zeitraum" value={
               tournament.tournament_start ? 
               `${new Date(tournament.tournament_start).toLocaleDateString('de')}${tournament.tournament_end ? ' - ' + new Date(tournament.tournament_end).toLocaleDateString('de') : ''}` : '-'
             } />
             <InfoItem label="Meldefrist" value={tournament.registration_deadline ? new Date(tournament.registration_deadline).toLocaleDateString('de') : '-'} />
             <InfoItem label="Auslosung" value={tournament.draw_date ? new Date(tournament.draw_date).toLocaleDateString('de') : '-'} />
-            <InfoItem label="Gewinnsätze" value={tournament.winning_sets} />
+            {tournament.type !== 'doubles' && <InfoItem label="Gewinnsätze" value={tournament.winning_sets} />}
             <InfoItem label="No-Ad" value={tournament.no_ad ? 'Ja' : 'Nein'} />
-            <InfoItem label="Match-Tiebreak" value={tournament.match_tiebreak ? `Ja (bei ${tournament.match_tiebreak_at})` : 'Nein'} />
+            {tournament.type !== 'doubles' && <InfoItem label="Match-Tiebreak" value={tournament.match_tiebreak ? `Ja (bei ${tournament.match_tiebreak_at})` : 'Nein'} />}
             {tournament.type === 'league' && (
               <>
                 <InfoItem label="Punkte Sieg" value={tournament.points_win} />
@@ -174,7 +191,7 @@ export default function TournamentDetail() {
         </div>
       )}
 
-      {tab === 'standings' && (
+      {tab === 'standings' && tournament.type === 'league' && (
         <div className="card league-table">
           <div className="table-wrapper">
             <table>
@@ -203,6 +220,42 @@ export default function TournamentDetail() {
                     <td>{s.points}</td>
                     <td>{s.bonus_points > 0 ? `+${s.bonus_points.toFixed(1)}` : '-'}</td>
                     <td className="points">{(s.points + s.bonus_points).toFixed(1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {tab === 'standings' && tournament.type === 'doubles' && doublesStandings?.length > 0 && (
+        <div className="card league-table">
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>{tournament.doubles_random_partners ? 'Spieler' : 'Team'}</th>
+                  <th>Sp.</th><th>S</th><th>N</th>
+                  <th>Games +/-</th><th>Diff</th><th>MP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {doublesStandings.map((s, i) => (
+                  <tr key={s.user_id}>
+                    <td className="rank">{i + 1}</td>
+                    <td>
+                      <div className="player-cell">
+                        {s.profile_photo ? <img src={`/uploads/profiles/${s.profile_photo}`} alt="" className="mini-avatar" /> : null}
+                        {s.name}{s.partner_name ? ` / ${s.partner_name}` : ''}
+                      </div>
+                    </td>
+                    <td>{s.matches_played}</td>
+                    <td className="text-success fw-bold">{s.wins}</td>
+                    <td className="text-danger">{s.losses}</td>
+                    <td>{s.games_won}:{s.games_lost}</td>
+                    <td className="fw-bold">{s.games_won - s.games_lost}</td>
+                    <td className="points">{s.match_points}</td>
                   </tr>
                 ))}
               </tbody>
@@ -249,6 +302,7 @@ function KOBracket({ rounds, matches, tournament, user, onReload }) {
     if (!matchesByRound[rn]) matchesByRound[rn] = [];
     matchesByRound[rn].push(m);
   });
+  Object.values(matchesByRound).forEach(rm => rm.sort((a, b) => (a.bracket_position || a.match_number) - (b.bracket_position || b.match_number)));
 
   const handleConfirm = async (matchId) => {
     if (!confirm('Ergebnis bestätigen?')) return;
@@ -279,76 +333,125 @@ function KOBracket({ rounds, matches, tournament, user, onReload }) {
 
   const formatDate = (d) => d ? new Date(d).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' }) : '';
 
+  const formatFullScore = (sets) => {
+    if (!sets?.length) return '';
+    return sets.map(s => {
+      let str = `${s.games_player1}:${s.games_player2}`;
+      if (s.tiebreak_points_player1 != null && s.tiebreak_points_player2 != null) {
+        str += `(${Math.min(s.tiebreak_points_player1, s.tiebreak_points_player2)})`;
+      }
+      return str;
+    }).join(', ');
+  };
+
+  const sortedRounds = [...rounds].sort((a, b) => a.round_number - b.round_number);
+
   return (
     <div>
       {actionMsg && <div className="alert alert-success mb-1">{actionMsg}</div>}
       {actionError && <div className="alert alert-error mb-1">{actionError}</div>}
 
-      <div className="bracket">
-        {rounds.map(r => (
-          <div className="bracket-round" key={r.id}>
-            <div className="bracket-round-title">{r.name}</div>
-            {(matchesByRound[r.round_number] || []).map(m => {
-              const canReport = tournament.self_reporting && user && m.result_status === 'pending' &&
-                (m.player1_id === user.id || m.player2_id === user.id);
-              const canConfirmDispute = user && m.result_status === 'reported' && m.reported_by !== user.id &&
-                (m.player1_id === user.id || m.player2_id === user.id);
+      <div className="ko-bracket">
+        {sortedRounds.map((r, ri) => {
+          const roundMatches = matchesByRound[r.round_number] || [];
+          const nextRound = sortedRounds[ri + 1];
+          const nextRoundMatchCount = nextRound ? (matchesByRound[nextRound.round_number] || []).length : 0;
+          const isLastRound = ri === sortedRounds.length - 1;
 
-              return (
-                <div className="bracket-match" key={m.id}>
-                  <div className={`bracket-player ${m.winner_id === m.player1_id ? 'winner' : ''}`}>
-                    <span className="bracket-player-info">
-                      {m.player1_seed && <span className="bracket-seed">[{m.player1_seed}]</span>}
-                      <span>{m.player1_name || 'TBD'}</span>
-                      {m.player1_lk && <span className="bracket-lk">LK {m.player1_lk}</span>}
-                    </span>
-                    <span className="score">{m.sets_player1 ?? ''}</span>
-                  </div>
-                  <div className={`bracket-player ${m.winner_id === m.player2_id ? 'winner' : ''}`}>
-                    <span className="bracket-player-info">
-                      {m.player2_seed && <span className="bracket-seed">[{m.player2_seed}]</span>}
-                      <span>{m.player2_name || 'TBD'}</span>
-                      {m.player2_lk && <span className="bracket-lk">LK {m.player2_lk}</span>}
-                    </span>
-                    <span className="score">{m.sets_player2 ?? ''}</span>
-                  </div>
-                  {(m.scheduled_date || m.scheduled_time || m.court) && (
-                    <div className="bracket-schedule-bar">
-                      <span className="bracket-schedule-info">
-                        {formatDate(m.scheduled_date)}{m.scheduled_time ? ` ${m.scheduled_time}` : ''}{m.court ? ` · ${m.court}` : ''}
-                      </span>
-                    </div>
-                  )}
-                  {m.score && m.result_status !== 'pending' && (
-                    <div className="bracket-score-detail">
-                      {m.sets && m.sets.length > 0
-                        ? m.sets.map((s, i) => <span key={i} className="score-set">{s.games_player1}:{s.games_player2} </span>)
-                        : m.score}
-                    </div>
-                  )}
-                  {user && (canReport || canConfirmDispute) && (
-                    <div className="bracket-actions">
-                      {canReport && (
-                        <button className="btn btn-sm btn-primary" onClick={() => setReportMatch(m)}>Ergebnis eintragen</button>
-                      )}
-                      {canConfirmDispute && (
-                        <>
-                          <button className="btn btn-sm btn-success" disabled={actionLoading === m.id} onClick={() => handleConfirm(m.id)}>
-                            {actionLoading === m.id ? '...' : '✓ Bestätigen'}
-                          </button>
-                          <button className="btn btn-sm btn-danger" disabled={actionLoading === m.id}
-                            onClick={() => { setDisputeMatch(m); setDisputeReason(''); }}>
-                            ✗ Reklamieren
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  )}
+          return (
+            <Fragment key={r.id}>
+              <div className="bracket-round">
+                <div className="bracket-round-title">{r.name}</div>
+                <div className="bracket-round-body">
+                  {roundMatches.map(m => {
+                    const canReport = tournament.self_reporting && user && m.result_status === 'pending' &&
+                      (m.player1_id === user.id || m.player2_id === user.id) &&
+                      m.player1_id && m.player2_id;
+                    const canConfirmDispute = user && m.result_status === 'reported' && m.reported_by !== user.id &&
+                      (m.player1_id === user.id || m.player2_id === user.id);
+                    const hasResult = m.result_status !== 'pending' && m.winner_id;
+
+                    return (
+                      <div className="bracket-slot" key={m.id}>
+                        <div className="bracket-match">
+                          <div className={`bracket-player ${m.winner_id && m.winner_id === m.player1_id ? 'winner' : ''}`}>
+                            <span className="bracket-player-info">
+                              {m.player1_seed && <span className="bracket-seed">[{m.player1_seed}]</span>}
+                              <span>{m.player1_name || 'TBD'}</span>
+                              {m.player1_lk && <span className="bracket-lk">LK {m.player1_lk}</span>}
+                            </span>
+                            <span className="bracket-scores">
+                              {m.sets?.length > 0 && m.sets.map((s, i) => (
+                                <span key={i} className={`bracket-game ${s.games_player1 > s.games_player2 ? 'set-won' : ''}`}>{s.games_player1}</span>
+                              ))}
+                            </span>
+                          </div>
+                          <div className={`bracket-player ${m.winner_id && m.winner_id === m.player2_id ? 'winner' : ''}`}>
+                            <span className="bracket-player-info">
+                              {m.player2_seed && <span className="bracket-seed">[{m.player2_seed}]</span>}
+                              <span>{m.player2_name || 'TBD'}</span>
+                              {m.player2_lk && <span className="bracket-lk">LK {m.player2_lk}</span>}
+                            </span>
+                            <span className="bracket-scores">
+                              {m.sets?.length > 0 && m.sets.map((s, i) => (
+                                <span key={i} className={`bracket-game ${s.games_player2 > s.games_player1 ? 'set-won' : ''}`}>{s.games_player2}</span>
+                              ))}
+                            </span>
+                          </div>
+                          {hasResult && (m.sets?.length > 0 || m.walkover) && (
+                            <div className="bracket-score-detail">
+                              {m.walkover ? 'Freilos' : formatFullScore(m.sets)}
+                            </div>
+                          )}
+                          {(m.scheduled_date || m.scheduled_time || m.court) && (
+                            <div className="bracket-schedule-bar">
+                              <span className="bracket-schedule-info">
+                                {formatDate(m.scheduled_date)}{m.scheduled_time ? ` ${m.scheduled_time}` : ''}{m.court ? ` · ${m.court}` : ''}
+                              </span>
+                            </div>
+                          )}
+                          {user && (canReport || canConfirmDispute) && (
+                            <div className="bracket-actions">
+                              {canReport && (
+                                <button className="btn btn-sm btn-primary" onClick={() => setReportMatch(m)}>Ergebnis eintragen</button>
+                              )}
+                              {canConfirmDispute && (
+                                <>
+                                  <button className="btn btn-sm btn-success" disabled={actionLoading === m.id} onClick={() => handleConfirm(m.id)}>
+                                    {actionLoading === m.id ? '...' : '✓ Bestätigen'}
+                                  </button>
+                                  <button className="btn btn-sm btn-danger" disabled={actionLoading === m.id}
+                                    onClick={() => { setDisputeMatch(m); setDisputeReason(''); }}>
+                                    ✗ Reklamieren
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
-        ))}
+              </div>
+              {!isLastRound && nextRoundMatchCount > 0 && (
+                <div className="bracket-connectors">
+                  <div className="bracket-round-title" style={{ visibility: 'hidden' }}>&nbsp;</div>
+                  <div className="bracket-connector-body">
+                    {Array.from({ length: nextRoundMatchCount }).map((_, ci) => (
+                      <div className="bracket-connector-group" key={ci}>
+                        <div className="connector-top" />
+                        <div className="connector-bottom" />
+                        <div className="connector-vertical" />
+                        <div className="connector-horizontal" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </Fragment>
+          );
+        })}
       </div>
 
       {reportMatch && (
@@ -461,9 +564,17 @@ function MatchList({ rounds, matches, tournament, user, onReload }) {
       {rounds.map(r => {
         const roundMatches = filteredMatches.filter(m => m.round_number === r.round_number);
         if (roundMatches.length === 0) return null;
+        const hasRoundSchedule = r.scheduled_date || r.scheduled_time || r.scheduled_duration || r.location;
         return (
           <div key={r.id} className="card" style={{ marginBottom: '1rem' }}>
-            <h3 style={{ color: 'var(--primary)', marginBottom: '1rem' }}>{r.name}</h3>
+            <h3 style={{ color: 'var(--primary)', marginBottom: '0.5rem' }}>{r.name}</h3>
+            {hasRoundSchedule && (
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                {r.scheduled_date && <span>📅 {new Date(r.scheduled_date).toLocaleDateString('de')}</span>}
+                {r.scheduled_time && <span>🕐 {r.scheduled_time}{r.scheduled_duration ? ` (${r.scheduled_duration} Min.)` : ''}</span>}
+                {r.location && <span>📍 {r.location}</span>}
+              </div>
+            )}
             <div className="table-wrapper">
               <table>
                 <thead>
@@ -474,6 +585,7 @@ function MatchList({ rounds, matches, tournament, user, onReload }) {
                     <th>{tournament.type === 'doubles' ? 'Team 2' : 'Spieler 2'}</th>
                     <th>Ergebnis</th>
                     <th>Status</th>
+                    {(tournament.type === 'doubles' || tournament.type === 'lk_day') && <th>Platz</th>}
                     {user && <th>Aktion</th>}
                   </tr>
                 </thead>
@@ -491,6 +603,7 @@ function MatchList({ rounds, matches, tournament, user, onReload }) {
                           <span className={m.winner_id === m.player1_id ? 'fw-bold text-success' : ''}>
                             {m.player1_name || 'TBD'}
                           </span>
+                          {tournament.type === 'lk_day' && m.player1_lk && <span className="text-muted" style={{ fontSize: '0.8rem' }}> (LK {m.player1_lk})</span>}
                           {m.partner1_name && <span className="text-muted"> / {m.partner1_name}</span>}
                         </td>
                         <td style={{ textAlign: 'center', color: 'var(--text-muted)' }}>vs</td>
@@ -498,6 +611,7 @@ function MatchList({ rounds, matches, tournament, user, onReload }) {
                           <span className={m.winner_id === m.player2_id ? 'fw-bold text-success' : ''}>
                             {m.player2_name || 'TBD'}
                           </span>
+                          {tournament.type === 'lk_day' && m.player2_lk && <span className="text-muted" style={{ fontSize: '0.8rem' }}> (LK {m.player2_lk})</span>}
                           {m.partner2_name && <span className="text-muted"> / {m.partner2_name}</span>}
                         </td>
                         <td>
@@ -523,6 +637,12 @@ function MatchList({ rounds, matches, tournament, user, onReload }) {
                              m.result_status === 'disputed' ? 'Reklamiert' : m.result_status === 'admin_set' ? 'Admin' : 'Offen'}
                           </span>
                         </td>
+                        {(tournament.type === 'doubles' || tournament.type === 'lk_day') && (
+                          <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                            {m.court || '—'}
+                            {m.scheduled_time && <div>{m.scheduled_time}</div>}
+                          </td>
+                        )}
                         {user && (
                           <td>
                             {canReport && (
@@ -586,7 +706,8 @@ function MatchList({ rounds, matches, tournament, user, onReload }) {
 }
 
 function ScoreModal({ match, tournament, onClose, onSaved }) {
-  const numSets = tournament.winning_sets === 3 ? 5 : 3;
+  const isDoubles = tournament.type === 'doubles';
+  const numSets = isDoubles ? 1 : (tournament.winning_sets === 3 ? 5 : 3);
   const useMTB = tournament.match_tiebreak;
   const mtbAt = tournament.match_tiebreak_at || '1:1';
   const [sets, setSets] = useState(Array.from({ length: numSets }, () => ({ games_player1: '', games_player2: '' })));
@@ -698,9 +819,11 @@ function ScoreModal({ match, tournament, onClose, onSaved }) {
   }
 
   useEffect(() => {
-    // Auto-select winner when sets change
-    const detected = autoDetectWinner(sets);
-    if (detected) setWinnerId(detected);
+    // Auto-select winner when sets change (not for doubles since draws are possible)
+    if (tournament.type !== 'doubles') {
+      const detected = autoDetectWinner(sets);
+      if (detected) setWinnerId(detected);
+    }
   }, [sets]);
 
   const handleSubmit = async (e) => {
@@ -712,7 +835,7 @@ function ScoreModal({ match, tournament, onClose, onSaved }) {
     if (validSets.length === 0) return setError('Mindestens ein Satz eingeben.');
     if (!winnerId) return setError('Gewinner auswählen.');
 
-    const validationError = validateTennisResult(sets, winnerId);
+    const validationError = tournament.type === 'doubles' ? null : validateTennisResult(sets, winnerId);
     if (validationError) {
       return setWarning(validationError);
     }
@@ -759,10 +882,10 @@ function ScoreModal({ match, tournament, onClose, onSaved }) {
               const isLastDecider = useMTB && idx === numSets - 1;
               return (
                 <div className="set-row" key={idx}>
-                  <label>{isLastDecider ? 'Match-TB' : `Satz ${idx + 1}`}</label>
-                  <input type="number" min="0" max={isLastDecider ? 99 : 7} value={s.games_player1} onChange={e => handleSetChange(idx, 'games_player1', e.target.value)} placeholder="-" />
+                  <label>{isDoubles ? 'Games' : isLastDecider ? 'Match-TB' : `Satz ${idx + 1}`}</label>
+                  <input type="number" min="0" max={isDoubles ? 99 : isLastDecider ? 99 : 7} value={s.games_player1} onChange={e => handleSetChange(idx, 'games_player1', e.target.value)} placeholder="-" />
                   <span className="separator">:</span>
-                  <input type="number" min="0" max={isLastDecider ? 99 : 7} value={s.games_player2} onChange={e => handleSetChange(idx, 'games_player2', e.target.value)} placeholder="-" />
+                  <input type="number" min="0" max={isDoubles ? 99 : isLastDecider ? 99 : 7} value={s.games_player2} onChange={e => handleSetChange(idx, 'games_player2', e.target.value)} placeholder="-" />
                 </div>
               );
             })}

@@ -4,7 +4,7 @@ const { authenticateUser } = require('../middleware/auth');
 const { db } = require('../config/database');
 const { sendResultConfirmationEmail, sendDisputeNotificationToAdmin } = require('../services/emailService');
 const { updateLeagueStandings } = require('../services/leagueService');
-const { advanceWinner } = require('../services/bracketService');
+const { advanceWinner, updateDoublesStandings } = require('../services/bracketService');
 
 const router = express.Router();
 
@@ -98,13 +98,16 @@ router.post('/:matchId/report', authenticateUser, async (req, res) => {
 
     transaction();
 
-    // Bei Auto-Bestätigung (eigene Niederlage gemeldet): Liga/KO sofort aktualisieren
+    // Bei Auto-Bestätigung (eigene Niederlage gemeldet): Liga/KO/Doppel sofort aktualisieren
     if (!reporterReportsOwnWin) {
       if (match.tournament_type === 'league') {
         updateLeagueStandings(match.id);
       }
       if (match.tournament_type === 'ko') {
         advanceWinner(match.id);
+      }
+      if (match.tournament_type === 'doubles') {
+        updateDoublesStandings(match.id);
       }
     }
 
@@ -164,6 +167,9 @@ router.post('/:matchId/confirm-result', authenticateUser, (req, res) => {
     }
     if (match.tournament_type === 'ko') {
       advanceWinner(match.id);
+    }
+    if (match.tournament_type === 'doubles') {
+      updateDoublesStandings(match.id);
     }
 
     res.json({ message: 'Ergebnis bestätigt!' });
@@ -259,6 +265,11 @@ router.post('/confirm', authenticateUser, (req, res) => {
     // KO: Gewinner in nächste Runde
     if (match.tournament_type === 'ko') {
       advanceWinner(match.id);
+    }
+
+    // Doppel-Tabelle aktualisieren
+    if (match.tournament_type === 'doubles') {
+      updateDoublesStandings(match.id);
     }
 
     res.json({ message: 'Ergebnis bestätigt!' });

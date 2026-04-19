@@ -16,6 +16,9 @@ export default function AdminMatches() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [disputes, setDisputes] = useState([]);
+  const [scheduleMatch, setScheduleMatch] = useState(null);
+  const [scheduleForm, setScheduleForm] = useState({ scheduled_date: '', scheduled_time: '', court: '' });
+  const [scheduleSaving, setScheduleSaving] = useState(false);
   const token = localStorage.getItem('adminToken');
   const headers = { Authorization: `Bearer ${token}` };
 
@@ -64,7 +67,7 @@ export default function AdminMatches() {
     if (!winner) { setError('Gewinner auswählen.'); return; }
 
     try {
-      await api.put(`/admin/matches/${editMatch.id}`, { sets, winner_id: parseInt(winner) }, { headers });
+      await api.put(`/admin/matches/${editMatch.id}`, { sets, winnerId: parseInt(winner) }, { headers });
       setMsg('Ergebnis gespeichert!');
       setEditMatch(null);
       load();
@@ -87,6 +90,27 @@ export default function AdminMatches() {
   const statusClass = (s) => {
     const map = { pending: 'badge-warning', reported: 'badge-info', confirmed: 'badge-success', disputed: 'badge-danger' };
     return map[s] || '';
+  };
+
+  const openSchedule = (m) => {
+    setScheduleMatch(m);
+    setScheduleForm({
+      scheduled_date: m.scheduled_date || '',
+      scheduled_time: m.scheduled_time || '',
+      court: m.court || ''
+    });
+  };
+
+  const handleSaveSchedule = async () => {
+    if (!scheduleMatch) return;
+    setScheduleSaving(true); setMsg(''); setError('');
+    try {
+      await api.put(`/admin/matches/${scheduleMatch.id}/schedule`, scheduleForm, { headers });
+      setMsg('Spielplan aktualisiert!');
+      setScheduleMatch(null);
+      load();
+    } catch (err) { setError(err.response?.data?.error || 'Fehler.'); }
+    finally { setScheduleSaving(false); }
   };
 
   if (loading) return <div className="loading"><div className="spinner"></div></div>;
@@ -156,6 +180,7 @@ export default function AdminMatches() {
                   <th>Ergebnis</th>
                   <th>Status</th>
                   <th>Gewinner</th>
+                  <th>Platz/Zeit</th>
                   <th>Aktionen</th>
                 </tr>
               </thead>
@@ -164,8 +189,8 @@ export default function AdminMatches() {
                   <tr key={m.id} style={m.result_status === 'disputed' ? { background: '#fff3f3' } : {}}>
                     <td>{m.round_number}</td>
                     <td>{m.match_number}</td>
-                    <td className="fw-bold">{m.player1_name || '—'}</td>
-                    <td className="fw-bold">{m.player2_name || '—'}</td>
+                    <td className="fw-bold">{m.player1_name || '—'}{m.partner1_name ? ` / ${m.partner1_name}` : ''}{tournament?.type === 'lk_day' && m.player1_lk ? <span className="text-muted" style={{ fontWeight: 400, fontSize: '0.8rem' }}> (LK {m.player1_lk})</span> : ''}</td>
+                    <td className="fw-bold">{m.player2_name || '—'}{m.partner2_name ? ` / ${m.partner2_name}` : ''}{tournament?.type === 'lk_day' && m.player2_lk ? <span className="text-muted" style={{ fontWeight: 400, fontSize: '0.8rem' }}> (LK {m.player2_lk})</span> : ''}</td>
                     <td>
                       {m.sets && m.sets.length > 0
                         ? m.sets.map((s, i) => <span key={i} className="score-set">{s.games_player1}:{s.games_player2} </span>)
@@ -173,13 +198,24 @@ export default function AdminMatches() {
                     </td>
                     <td><span className={`badge ${statusClass(m.result_status)}`}>{statusLabel(m.result_status)}</span></td>
                     <td>{m.winner_name || '—'}</td>
+                    <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      {m.court || m.scheduled_time ? (
+                        <span style={{ cursor: 'pointer' }} onClick={() => openSchedule(m)} title="Klicken zum Bearbeiten">
+                          {m.court && <div>{m.court}</div>}
+                          {m.scheduled_time && <div>{m.scheduled_time}</div>}
+                          {m.scheduled_date && <div>{new Date(m.scheduled_date).toLocaleDateString('de')}</div>}
+                        </span>
+                      ) : (
+                        <button className="btn btn-sm btn-outline" onClick={() => openSchedule(m)} style={{ fontSize: '0.75rem' }}>+ Platz</button>
+                      )}
+                    </td>
                     <td>
                       <button className="btn btn-sm btn-primary" onClick={() => openEdit(m)}>✏️</button>
                     </td>
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan="8" className="text-center text-muted">Keine Matches in dieser Runde.</td></tr>
+                  <tr><td colSpan="9" className="text-center text-muted">Keine Matches in dieser Runde.</td></tr>
                 )}
               </tbody>
             </table>
@@ -224,6 +260,42 @@ export default function AdminMatches() {
               <div className="flex gap-1 mt-2">
                 <button className="btn btn-primary" onClick={handleSetResult}>💾 Speichern</button>
                 <button className="btn btn-outline" onClick={() => setEditMatch(null)}>Abbrechen</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Schedule Modal */}
+        {scheduleMatch && (
+          <div className="modal-overlay" onClick={() => setScheduleMatch(null)}>
+            <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+              <div className="modal-header">
+                <h3>Spielplan festlegen</h3>
+                <button className="modal-close" onClick={() => setScheduleMatch(null)}>×</button>
+              </div>
+              <p className="mb-2" style={{ fontSize: '0.9rem' }}>
+                <strong>{scheduleMatch.player1_name || 'Spieler 1'}</strong> vs <strong>{scheduleMatch.player2_name || 'Spieler 2'}</strong>
+              </p>
+              <div className="form-group">
+                <label>Datum</label>
+                <input type="date" value={scheduleForm.scheduled_date}
+                  onChange={e => setScheduleForm(f => ({ ...f, scheduled_date: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label>Uhrzeit</label>
+                <input type="time" value={scheduleForm.scheduled_time}
+                  onChange={e => setScheduleForm(f => ({ ...f, scheduled_time: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label>Anlage / Platz</label>
+                <input type="text" placeholder="z.B. TC Musterstadt, Platz 3"
+                  value={scheduleForm.court}
+                  onChange={e => setScheduleForm(f => ({ ...f, court: e.target.value }))} />
+              </div>
+              <div className="flex gap-1 mt-2">
+                <button className="btn btn-primary" disabled={scheduleSaving} onClick={handleSaveSchedule}>
+                  {scheduleSaving ? 'Speichert...' : '💾 Speichern'}
+                </button>
+                <button className="btn btn-outline" onClick={() => setScheduleMatch(null)}>Abbrechen</button>
               </div>
             </div>
           </div>

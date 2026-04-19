@@ -106,6 +106,20 @@ router.get('/:id', optionalAuth, (req, res) => {
       `).all(tournament.id);
     }
 
+    // Doppel-Tabelle wenn Doppel-Modus
+    let doublesStandings = [];
+    if (tournament.type === 'doubles') {
+      doublesStandings = db.prepare(`
+        SELECT ds.*, u.name, u.username, u.lk, u.profile_photo,
+               p.name as partner_name
+        FROM doubles_standings ds
+        JOIN users u ON ds.user_id = u.id
+        LEFT JOIN users p ON ds.partner_id = p.id
+        WHERE ds.tournament_id = ?
+        ORDER BY ds.match_points DESC, (ds.games_won - ds.games_lost) DESC
+      `).all(tournament.id);
+    }
+
     // Eigene Anmeldung
     let myRegistration = null;
     if (req.user) {
@@ -113,7 +127,7 @@ router.get('/:id', optionalAuth, (req, res) => {
         .get(tournament.id, req.user.id);
     }
 
-    res.json({ tournament, participants, rounds, matches, standings, myRegistration });
+    res.json({ tournament, participants, rounds, matches, standings, doublesStandings, myRegistration });
   } catch (err) {
     console.error('Turnier laden Fehler:', err);
     res.status(500).json({ error: 'Serverfehler.' });
@@ -162,8 +176,8 @@ router.post('/:id/register', authenticateUser, async (req, res) => {
       return res.status(400).json({ error: 'Bereits angemeldet.' });
     }
 
-    db.prepare('INSERT INTO tournament_registrations (tournament_id, user_id) VALUES (?, ?)')
-      .run(tournament.id, req.user.id);
+    db.prepare('INSERT INTO tournament_registrations (tournament_id, user_id, partner_name) VALUES (?, ?, ?)')
+      .run(tournament.id, req.user.id, req.body.partner_name || null);
 
     // Admin per E-Mail benachrichtigen
     try {

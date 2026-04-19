@@ -10,6 +10,7 @@ services:
     environment:
       - NODE_ENV=production
     volumes:
+      - ./backend/.env:/app/.env:ro
       - ./backend/data:/app/data
       - ./backend/uploads:/app/uploads
     ports:
@@ -31,8 +32,8 @@ services:
     container_name: summerleague-nginx
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - "8080:80"
+      - "8443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./certbot/conf:/etc/letsencrypt:ro

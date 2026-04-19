@@ -74,8 +74,14 @@ function initializeDatabase() {
       -- Doppel-Einstellungen
       doubles_rounds INTEGER DEFAULT 3,
       doubles_random_partners INTEGER DEFAULT 0,
+      is_doubles INTEGER DEFAULT 0,
+      doubles_round_duration INTEGER,
+      doubles_start_time TEXT,
+      doubles_courts TEXT,
       
       -- Ergebnis-Einstellungen
+      entry_fee TEXT,
+      prize_description TEXT,
       self_reporting INTEGER DEFAULT 0,
       dtb_id_required INTEGER DEFAULT 0,
       
@@ -98,6 +104,8 @@ function initializeDatabase() {
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected', 'withdrawn')),
       seed_number INTEGER,
+      partner_name TEXT,
+      partner_id INTEGER REFERENCES users(id),
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
       UNIQUE(tournament_id, user_id)
@@ -110,6 +118,9 @@ function initializeDatabase() {
       round_number INTEGER NOT NULL,
       name TEXT,
       scheduled_date TEXT,
+      scheduled_time TEXT,
+      scheduled_duration INTEGER,
+      location TEXT,
       status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed')),
       created_at TEXT DEFAULT (datetime('now'))
     );
@@ -184,6 +195,21 @@ function initializeDatabase() {
       UNIQUE(match_id, set_number)
     );
 
+    -- Doppel-Tabelle (Rangliste)
+    CREATE TABLE IF NOT EXISTS doubles_standings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      partner_id INTEGER REFERENCES users(id),
+      match_points INTEGER DEFAULT 0,
+      matches_played INTEGER DEFAULT 0,
+      wins INTEGER DEFAULT 0,
+      losses INTEGER DEFAULT 0,
+      games_won INTEGER DEFAULT 0,
+      games_lost INTEGER DEFAULT 0,
+      UNIQUE(tournament_id, user_id)
+    );
+
     -- E-Mail-Log
     CREATE TABLE IF NOT EXISTS email_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -201,6 +227,43 @@ function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_matches_players ON matches(player1_id, player2_id);
     CREATE INDEX IF NOT EXISTS idx_league_standings_tournament ON league_standings(tournament_id);
     CREATE INDEX IF NOT EXISTS idx_rounds_tournament ON rounds(tournament_id);
+  `);
+
+  // Migrations for existing databases
+  const migrations = [
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('rounds') WHERE name='scheduled_time'", sql: "ALTER TABLE rounds ADD COLUMN scheduled_time TEXT" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('rounds') WHERE name='scheduled_duration'", sql: "ALTER TABLE rounds ADD COLUMN scheduled_duration INTEGER" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('rounds') WHERE name='location'", sql: "ALTER TABLE rounds ADD COLUMN location TEXT" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournaments') WHERE name='is_doubles'", sql: "ALTER TABLE tournaments ADD COLUMN is_doubles INTEGER DEFAULT 0" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournaments') WHERE name='doubles_round_duration'", sql: "ALTER TABLE tournaments ADD COLUMN doubles_round_duration INTEGER" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournaments') WHERE name='doubles_start_time'", sql: "ALTER TABLE tournaments ADD COLUMN doubles_start_time TEXT" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournaments') WHERE name='doubles_courts'", sql: "ALTER TABLE tournaments ADD COLUMN doubles_courts TEXT" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournament_registrations') WHERE name='partner_name'", sql: "ALTER TABLE tournament_registrations ADD COLUMN partner_name TEXT" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournament_registrations') WHERE name='partner_id'", sql: "ALTER TABLE tournament_registrations ADD COLUMN partner_id INTEGER REFERENCES users(id)" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournaments') WHERE name='entry_fee'", sql: "ALTER TABLE tournaments ADD COLUMN entry_fee TEXT" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournaments') WHERE name='prize_description'", sql: "ALTER TABLE tournaments ADD COLUMN prize_description TEXT" },
+  ];
+  for (const m of migrations) {
+    if (db.prepare(m.check).get().cnt === 0) {
+      db.exec(m.sql);
+    }
+  }
+
+  // Create doubles_standings table if not exists
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS doubles_standings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      partner_id INTEGER REFERENCES users(id),
+      match_points INTEGER DEFAULT 0,
+      matches_played INTEGER DEFAULT 0,
+      wins INTEGER DEFAULT 0,
+      losses INTEGER DEFAULT 0,
+      games_won INTEGER DEFAULT 0,
+      games_lost INTEGER DEFAULT 0,
+      UNIQUE(tournament_id, user_id)
+    )
   `);
 
   console.log('Datenbank initialisiert.');

@@ -175,6 +175,10 @@ function advanceWinner(matchId) {
 }
 
 // LK-Tagesturnier generieren
+// Paarungslogik: Sortiert nach LK (beste = niedrigste LK zuerst).
+// Bester Spieler (Index 0) spielt gegen Index 1 und Index 2.
+// Jeder andere Spieler spielt gegen den 1 Rang besseren und den 2 Ränge besseren.
+// Der schlechteste Spieler spielt gegen Rang-1 und Rang-2 über ihm.
 function generateLKDayTournament(tournamentId) {
   const tournament = db.prepare('SELECT * FROM tournaments WHERE id = ?').get(tournamentId);
   if (!tournament) throw new Error('Turnier nicht gefunden');
@@ -193,46 +197,50 @@ function generateLKDayTournament(tournamentId) {
     db.prepare('DELETE FROM matches WHERE tournament_id = ?').run(tournamentId);
     db.prepare('DELETE FROM rounds WHERE tournament_id = ?').run(tournamentId);
 
-    // Runde 1: Gegen LK-Besseren
+    // Runde 1
     const round1 = db.prepare(
       'INSERT INTO rounds (tournament_id, round_number, name, status) VALUES (?, ?, ?, ?)'
-    ).run(tournamentId, 1, 'Runde 1 - Gegen LK-Besseren', 'pending');
+    ).run(tournamentId, 1, 'Runde 1', 'pending');
 
-    // Runde 2: Gegen LK-Schwächeren
+    // Runde 2
     const round2 = db.prepare(
       'INSERT INTO rounds (tournament_id, round_number, name, status) VALUES (?, ?, ?, ?)'
-    ).run(tournamentId, 2, 'Runde 2 - Gegen LK-Schwächeren', 'pending');
+    ).run(tournamentId, 2, 'Runde 2', 'pending');
 
-    // Paarungen: Jeder spielt gegen den nächstbesseren und nächstschwächeren
-    for (let i = 0; i < registrations.length; i++) {
+    const n = registrations.length;
+    const matchPairsR1 = new Set();
+    const matchPairsR2 = new Set();
+    let matchNumR1 = 1;
+    let matchNumR2 = 1;
+
+    const pairKey = (a, b) => a < b ? `${a}-${b}` : `${b}-${a}`;
+
+    const addMatch = (roundId, matchPairs, matchNum, p1Id, p2Id) => {
+      const key = pairKey(p1Id, p2Id);
+      if (matchPairs.has(key)) return matchNum;
+      matchPairs.add(key);
+      db.prepare(
+        'INSERT INTO matches (tournament_id, round_id, match_number, player1_id, player2_id) VALUES (?, ?, ?, ?, ?)'
+      ).run(tournamentId, roundId, matchNum, p1Id, p2Id);
+      return matchNum + 1;
+    };
+
+    for (let i = 0; i < n; i++) {
       const player = registrations[i];
 
-      // Gegen Besseren (niedrigere LK = besserer Spieler)
-      if (i > 0) {
-        const better = registrations[i - 1];
-        // Prüfe ob dieses Match schon existiert (Duplikat vermeiden)
-        const existing = db.prepare(
-          'SELECT id FROM matches WHERE tournament_id = ? AND round_id = ? AND ((player1_id = ? AND player2_id = ?) OR (player1_id = ? AND player2_id = ?))'
-        ).get(tournamentId, round1.lastInsertRowid, player.user_id, better.user_id, better.user_id, player.user_id);
-        
-        if (!existing) {
-          db.prepare(
-            'INSERT INTO matches (tournament_id, round_id, match_number, player1_id, player2_id) VALUES (?, ?, ?, ?, ?)'
-          ).run(tournamentId, round1.lastInsertRowid, i, player.user_id, better.user_id);
-        }
-      }
+      if (i === 0) {
+        // Bester Spieler spielt gegen #2 (Runde 1) und #3 (Runde 2)
+        if (n > 1) matchNumR1 = addMatch(round1.lastInsertRowid, matchPairsR1, matchNumR1, player.user_id, registrations[1].user_id);
+        if (n > 2) matchNumR2 = addMatch(round2.lastInsertRowid, matchPairsR2, matchNumR2, player.user_id, registrations[2].user_id);
+      } else {
+        // Gegen 1 Rang besseren (Runde 1)
+        const opp1 = registrations[i - 1];
+        matchNumR1 = addMatch(round1.lastInsertRowid, matchPairsR1, matchNumR1, player.user_id, opp1.user_id);
 
-      // Gegen Schwächeren (höhere LK = schwächerer Spieler)
-      if (i < registrations.length - 1) {
-        const worse = registrations[i + 1];
-        const existing = db.prepare(
-          'SELECT id FROM matches WHERE tournament_id = ? AND round_id = ? AND ((player1_id = ? AND player2_id = ?) OR (player1_id = ? AND player2_id = ?))'
-        ).get(tournamentId, round2.lastInsertRowid, player.user_id, worse.user_id, worse.user_id, player.user_id);
-        
-        if (!existing) {
-          db.prepare(
-            'INSERT INTO matches (tournament_id, round_id, match_number, player1_id, player2_id) VALUES (?, ?, ?, ?, ?)'
-          ).run(tournamentId, round2.lastInsertRowid, i + 1, player.user_id, worse.user_id);
+        // Gegen 2 Ränge besseren (Runde 2), falls vorhanden
+        if (i >= 2) {
+          const opp2 = registrations[i - 2];
+          matchNumR2 = addMatch(round2.lastInsertRowid, matchPairsR2, matchNumR2, player.user_id, opp2.user_id);
         }
       }
     }
@@ -261,14 +269,59 @@ function generateDoublesTournament(tournamentId) {
 
   const playerIds = registrations.map(r => r.user_id);
 
+  // Parse court numbers from doubles_courts (e.g. "1,2,3" or "1-4")
+  let courts = [];
+  if (tournament.doubles_courts) {
+    const parts = tournament.doubles_courts.split(',').map(s => s.trim());
+    for (const p of parts) {
+      if (p.includes('-')) {
+        const [start, end] = p.split('-').map(Number);
+        for (let i = start; i <= end; i++) courts.push(String(i));
+      } else {
+        courts.push(p);
+      }
+    }
+  }
+
+  const roundDuration = tournament.doubles_round_duration || null;
+  const startTime = tournament.doubles_start_time || null;
+
+  // Helper to calculate round time offset
+  const calcRoundTime = (roundIndex) => {
+    if (!startTime || !roundDuration) return null;
+    const [h, m] = startTime.split(':').map(Number);
+    const totalMinutes = h * 60 + m + roundIndex * roundDuration;
+    const rh = Math.floor(totalMinutes / 60);
+    const rm = totalMinutes % 60;
+    return `${String(rh).padStart(2, '0')}:${String(rm).padStart(2, '0')}`;
+  };
+
   const transaction = db.transaction(() => {
     db.prepare('DELETE FROM matches WHERE tournament_id = ?').run(tournamentId);
     db.prepare('DELETE FROM rounds WHERE tournament_id = ?').run(tournamentId);
+    db.prepare('DELETE FROM doubles_standings WHERE tournament_id = ?').run(tournamentId);
+
+    // Create standings for each player
+    const insertStanding = db.prepare(
+      'INSERT INTO doubles_standings (tournament_id, user_id, partner_id) VALUES (?, ?, ?)'
+    );
+    if (!randomPartners) {
+      // Fixed partners: store partner_id from registration
+      for (const reg of registrations) {
+        insertStanding.run(tournamentId, reg.user_id, reg.partner_id || null);
+      }
+    } else {
+      // Random partners: no fixed partner
+      for (const reg of registrations) {
+        insertStanding.run(tournamentId, reg.user_id, null);
+      }
+    }
 
     for (let round = 1; round <= numRounds; round++) {
+      const roundTime = calcRoundTime(round - 1);
       const roundResult = db.prepare(
-        'INSERT INTO rounds (tournament_id, round_number, name, status) VALUES (?, ?, ?, ?)'
-      ).run(tournamentId, round, `Doppel-Runde ${round}`, 'pending');
+        'INSERT INTO rounds (tournament_id, round_number, name, status, scheduled_time, scheduled_duration, location) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).run(tournamentId, round, `Doppel-Runde ${round}`, 'pending', roundTime, roundDuration, tournament.location || null);
 
       let pairs;
       if (randomPartners) {
@@ -283,11 +336,16 @@ function generateDoublesTournament(tournamentId) {
           pairs.push([shuffled[i], shuffled[i + 1]]);
         }
       } else {
-        // Feste Partner (nach LK sortiert, bester mit schwächstem)
+        // Feste Partner aus Registrierung (partner_id)
+        const paired = new Set();
         pairs = [];
-        const half = Math.floor(playerIds.length / 2);
-        for (let i = 0; i < half; i++) {
-          pairs.push([playerIds[i], playerIds[playerIds.length - 1 - i]]);
+        for (const reg of registrations) {
+          if (paired.has(reg.user_id)) continue;
+          if (reg.partner_id) {
+            pairs.push([reg.user_id, reg.partner_id]);
+            paired.add(reg.user_id);
+            paired.add(reg.partner_id);
+          }
         }
       }
 
@@ -295,13 +353,15 @@ function generateDoublesTournament(tournamentId) {
       let matchNum = 1;
       for (let i = 0; i < pairs.length - 1; i += 2) {
         if (pairs[i + 1]) {
+          const courtName = courts.length > 0 ? `Platz ${courts[(matchNum - 1) % courts.length]}` : null;
           db.prepare(
-            `INSERT INTO matches (tournament_id, round_id, match_number, player1_id, partner1_id, player2_id, partner2_id) 
-             VALUES (?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO matches (tournament_id, round_id, match_number, player1_id, partner1_id, player2_id, partner2_id, court, scheduled_time) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
           ).run(
             tournamentId, roundResult.lastInsertRowid, matchNum++,
             pairs[i][0], pairs[i][1],
-            pairs[i + 1][0], pairs[i + 1][1]
+            pairs[i + 1][0], pairs[i + 1][1],
+            courtName, roundTime
           );
         }
       }
@@ -311,4 +371,46 @@ function generateDoublesTournament(tournamentId) {
   transaction();
 }
 
-module.exports = { generateKOBracket, advanceWinner, generateLKDayTournament, generateDoublesTournament };
+// Doppel-Tabelle aktualisieren nach Ergebnis
+function updateDoublesStandings(matchId) {
+  const match = db.prepare(`
+    SELECT m.*, t.doubles_random_partners 
+    FROM matches m JOIN tournaments t ON m.tournament_id = t.id 
+    WHERE m.id = ?
+  `).get(matchId);
+  if (!match || !match.winner_id) return;
+
+  const sets = db.prepare('SELECT * FROM match_sets WHERE match_id = ? ORDER BY set_number').all(matchId);
+  let gamesP1 = 0, gamesP2 = 0;
+  for (const s of sets) {
+    gamesP1 += s.games_player1 || 0;
+    gamesP2 += s.games_player2 || 0;
+  }
+
+  // Determine winning team and losing team
+  const team1Won = match.winner_id === match.player1_id;
+  const winPlayers = team1Won ? [match.player1_id, match.partner1_id] : [match.player2_id, match.partner2_id];
+  const losePlayers = team1Won ? [match.player2_id, match.partner2_id] : [match.player1_id, match.partner1_id];
+  const winGames = team1Won ? gamesP1 : gamesP2;
+  const loseGames = team1Won ? gamesP2 : gamesP1;
+
+  const updatePlayer = db.prepare(`
+    UPDATE doubles_standings 
+    SET matches_played = matches_played + 1,
+        wins = wins + ?,
+        losses = losses + ?,
+        match_points = match_points + ?,
+        games_won = games_won + ?,
+        games_lost = games_lost + ?
+    WHERE tournament_id = ? AND user_id = ?
+  `);
+
+  for (const pid of winPlayers) {
+    if (pid) updatePlayer.run(1, 0, 1, winGames, loseGames, match.tournament_id, pid);
+  }
+  for (const pid of losePlayers) {
+    if (pid) updatePlayer.run(0, 1, 0, loseGames, winGames, match.tournament_id, pid);
+  }
+}
+
+module.exports = { generateKOBracket, advanceWinner, generateLKDayTournament, generateDoublesTournament, updateDoublesStandings };
