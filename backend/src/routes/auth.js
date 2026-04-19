@@ -11,7 +11,7 @@ const router = express.Router();
 // === REGISTRIERUNG ===
 router.post('/register', async (req, res) => {
   try {
-    const { username, email, password, name, dtb_id, lk, data_consent } = req.body;
+    const { username, email, password, name, dtb_id, lk, phone, data_consent } = req.body;
 
     // Validierung
     if (!username || !email || !password || !name) {
