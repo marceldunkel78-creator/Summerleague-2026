@@ -329,6 +329,33 @@ function initializeDatabase() {
     try { db.pragma('foreign_keys = ON'); } catch {}
   }
 
+  // Fix broken FK references from table renames (tournaments_old, *_bak)
+  try {
+    db.pragma('foreign_keys = OFF');
+    const brokenTables = db.prepare(
+      "SELECT name, sql FROM sqlite_master WHERE type='table' AND (sql LIKE '%tournaments_old%' OR sql LIKE '%_bak%')"
+    ).all();
+    for (const t of brokenTables) {
+      const tmpName = t.name + '__fk_fix';
+      db.exec(`ALTER TABLE "${t.name}" RENAME TO "${tmpName}"`);
+      let fixedSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?").get(tmpName).sql;
+      fixedSql = fixedSql.replace(new RegExp(`"${tmpName}"`, 'g'), `"${t.name}"`);
+      fixedSql = fixedSql.replace(new RegExp(tmpName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), t.name);
+      fixedSql = fixedSql.replace(/"tournaments_old"/g, 'tournaments');
+      fixedSql = fixedSql.replace(/tournaments_old/g, 'tournaments');
+      fixedSql = fixedSql.replace(/"(\w+)_bak"/g, '"$1"');
+      db.exec(fixedSql);
+      db.exec(`INSERT INTO "${t.name}" SELECT * FROM "${tmpName}"`);
+      db.exec(`DROP TABLE "${tmpName}"`);
+      console.log(`FK fix: ${t.name}`);
+    }
+    db.pragma('foreign_keys = ON');
+    if (brokenTables.length > 0) console.log(`Fixed ${brokenTables.length} tables with broken FK references.`);
+  } catch (e) {
+    console.log('FK repair skipped:', e.message);
+    try { db.pragma('foreign_keys = ON'); } catch {}
+  }
+
   // Create doubles_standings table if not exists
   db.exec(`
     CREATE TABLE IF NOT EXISTS doubles_standings (
