@@ -17,11 +17,14 @@ import AdminUsers from './pages/AdminUsers';
 import AdminTournaments from './pages/AdminTournaments';
 import AdminTournamentEdit from './pages/AdminTournamentEdit';
 import AdminMatches from './pages/AdminMatches';
+import Impressum from './pages/Impressum';
+import Datenschutz from './pages/Datenschutz';
 
 function App() {
   return (
-    <>
+    <div className="app-wrapper">
       <Navbar />
+      <main className="app-main">
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
@@ -44,8 +47,20 @@ function App() {
         <Route path="/admin/tournaments" element={<ProtectedRoute admin><AdminTournaments /></ProtectedRoute>} />
         <Route path="/admin/tournaments/:id" element={<ProtectedRoute admin><AdminTournamentEdit /></ProtectedRoute>} />
         <Route path="/admin/matches/:tournamentId" element={<ProtectedRoute admin><AdminMatches /></ProtectedRoute>} />
+        <Route path="/impressum" element={<Impressum />} />
+        <Route path="/datenschutz" element={<Datenschutz />} />
       </Routes>
-    </>
+      </main>
+      <footer className="app-footer">
+        <div className="footer-content">
+          <span>© {new Date().getFullYear()} Summerleague Tennis</span>
+          <nav className="footer-links">
+            <a href="/impressum">Impressum</a>
+            <a href="/datenschutz">Datenschutz</a>
+          </nav>
+        </div>
+      </footer>
+    </div>
   );
 }
 

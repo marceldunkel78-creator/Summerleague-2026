@@ -11,6 +11,7 @@ export default function Profile() {
   const [error, setError] = useState('');
   const [tournaments, setTournaments] = useState([]);
   const [matches, setMatches] = useState([]);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -77,6 +78,17 @@ export default function Profile() {
     } catch { setError('Fehler beim Löschen.'); }
   };
 
+  const handleDeleteAccount = async () => {
+    setMsg(''); setError('');
+    try {
+      const res = await api.delete('/users/account');
+      setMsg(res.data.message);
+      setDeleteConfirm(false);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Fehler beim Senden des Löschungsantrags.');
+    }
+  };
+
   const statusBadge = (status) => {
     const map = { pending: ['Ausstehend', 'badge-warning'], approved: ['Bestätigt', 'badge-success'], rejected: ['Abgelehnt', 'badge-danger'], withdrawn: ['Zurückgezogen', 'badge-neutral'] };
     const [label, cls] = map[status] || ['?', 'badge-neutral'];
@@ -140,6 +152,29 @@ export default function Profile() {
             </div>
             <button type="submit" className="btn btn-primary">Speichern</button>
           </form>
+
+          <hr style={{ margin: '2rem 0', borderColor: 'var(--border)' }} />
+          <div>
+            <h3 style={{ color: 'var(--danger)', marginBottom: '0.5rem' }}>Konto löschen</h3>
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-light)', marginBottom: '1rem' }}>
+              Dein Konto und alle zugehörigen Daten werden nach Prüfung durch den Administrator gelöscht.
+            </p>
+            {!deleteConfirm ? (
+              <button className="btn btn-danger" onClick={() => setDeleteConfirm(true)}>
+                Konto-Löschung beantragen
+              </button>
+            ) : (
+              <div style={{ background: '#fef2f2', border: '1px solid var(--danger)', borderRadius: 'var(--radius)', padding: '1rem' }}>
+                <p style={{ marginBottom: '1rem', fontWeight: 500 }}>
+                  Bist du sicher? Ein Löschungsantrag wird an den Administrator gesendet.
+                </p>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button className="btn btn-danger" onClick={handleDeleteAccount}>Ja, Löschung beantragen</button>
+                  <button className="btn btn-outline" onClick={() => setDeleteConfirm(false)}>Abbrechen</button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

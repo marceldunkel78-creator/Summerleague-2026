@@ -2,6 +2,7 @@ const express = require('express');
 const { authenticateUser } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { db } = require('../config/database');
+const transporter = require('../config/email');
 const path = require('path');
 const fs = require('fs');
 
@@ -49,6 +50,40 @@ router.delete('/profile-photo', authenticateUser, (req, res) => {
     res.json({ message: 'Profilfoto gelöscht.' });
   } catch (err) {
     res.status(500).json({ error: 'Fehler beim Löschen.' });
+  }
+});
+
+// === KONTO-LÖSCHUNG BEANTRAGEN ===
+router.delete('/account', authenticateUser, async (req, res) => {
+  try {
+    const user = db.prepare('SELECT id, username, name, email FROM users WHERE id = ?').get(req.user.id);
+    if (!user) return res.status(404).json({ error: 'Benutzer nicht gefunden.' });
+
+    const adminEmail = process.env.ADMIN_EMAIL || 'mdjunk7@freenet.de';
+    const from = process.env.SMTP_FROM || 'webmaster@tennis-summerleague.de';
+
+    await transporter.sendMail({
+      from,
+      to: adminEmail,
+      subject: `Konto-Löschung beantragt: ${user.name} (${user.username})`,
+      html: `
+        <h2>Konto-Löschung beantragt</h2>
+        <p>Folgender Benutzer hat die Löschung seines Kontos beantragt:</p>
+        <ul>
+          <li><strong>Name:</strong> ${user.name}</li>
+          <li><strong>Benutzername:</strong> ${user.username}</li>
+          <li><strong>E-Mail:</strong> ${user.email}</li>
+          <li><strong>User-ID:</strong> ${user.id}</li>
+          <li><strong>Datum:</strong> ${new Date().toLocaleString('de-DE')}</li>
+        </ul>
+        <p>Bitte lösche das Konto im Admin-Panel unter Benutzerverwaltung.</p>
+      `
+    });
+
+    res.json({ message: 'Löschungsantrag wurde gesendet. Du wirst per E-Mail benachrichtigt, wenn dein Konto gelöscht wurde.' });
+  } catch (err) {
+    console.error('Konto-Löschung Fehler:', err);
+    res.status(500).json({ error: 'Fehler beim Senden des Löschungsantrags.' });
   }
 });
 
