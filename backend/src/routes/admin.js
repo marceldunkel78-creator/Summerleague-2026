@@ -276,9 +276,9 @@ router.get('/tournaments/:id/registrations', authenticateAdmin, (req, res) => {
 
 router.put('/registrations/:regId', authenticateAdmin, async (req, res) => {
   try {
-    const { status, seed_number } = req.body;
+    let { status, seed_number } = req.body;
     const reg = db.prepare(`
-      SELECT tr.*, u.name, u.email, t.name as tournament_name
+      SELECT tr.*, u.name, u.email, t.name as tournament_name, t.max_participants, t.id as tid
       FROM tournament_registrations tr
       JOIN users u ON tr.user_id = u.id
       JOIN tournaments t ON tr.tournament_id = t.id
@@ -287,6 +287,17 @@ router.put('/registrations/:regId', authenticateAdmin, async (req, res) => {
 
     if (!reg) return res.status(404).json({ error: 'Anmeldung nicht gefunden.' });
 
+    // Waitlist-Logik: Wenn auf 'approved' gesetzt, prüfen ob Teilnehmerfeld voll
+    if (status === 'approved' && reg.status !== 'approved') {
+      const approvedCount = db.prepare(
+        "SELECT COUNT(*) as cnt FROM tournament_registrations WHERE tournament_id = ? AND status = 'approved'"
+      ).get(reg.tid);
+      if (reg.max_participants && approvedCount.cnt >= reg.max_participants) {
+        status = 'waitlist';
+      }
+    }
+
+    const wasApproved = reg.status === 'approved';
     const updates = [];
     const params = [];
     if (status) { updates.push('status = ?'); params.push(status); }
@@ -297,6 +308,26 @@ router.put('/registrations/:regId', authenticateAdmin, async (req, res) => {
 
     db.prepare(`UPDATE tournament_registrations SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
+    // Wenn ein zugelassener Teilnehmer entfernt wird, ersten Wartelistenteilnehmer nachrücken lassen
+    if (wasApproved && status && status !== 'approved') {
+      const firstWaitlist = db.prepare(`
+        SELECT tr.id, u.name, u.email, t.name as tournament_name
+        FROM tournament_registrations tr
+        JOIN users u ON tr.user_id = u.id
+        JOIN tournaments t ON tr.tournament_id = t.id
+        WHERE tr.tournament_id = ? AND tr.status = 'waitlist'
+        ORDER BY tr.created_at ASC LIMIT 1
+      `).get(reg.tid);
+      if (firstWaitlist) {
+        db.prepare("UPDATE tournament_registrations SET status = 'approved', updated_at = datetime('now') WHERE id = ?").run(firstWaitlist.id);
+        try {
+          await sendRegistrationApprovedEmail(firstWaitlist.email, firstWaitlist.name, firstWaitlist.tournament_name);
+        } catch (e) {
+          console.error('Waitlist Nachrücker E-Mail Fehler:', e.message);
+        }
+      }
+    }
+
     // E-Mail bei Genehmigung
     if (status === 'approved' && reg.status !== 'approved') {
       try {
@@ -306,8 +337,9 @@ router.put('/registrations/:regId', authenticateAdmin, async (req, res) => {
       }
     }
 
-    res.json({ message: 'Anmeldung aktualisiert.' });
+    res.json({ message: 'Anmeldung aktualisiert.' + (status === 'waitlist' ? ' Teilnehmerfeld voll – auf Warteliste gesetzt.' : '') });
   } catch (err) {
+    console.error('Registration Update Fehler:', err);
     res.status(500).json({ error: 'Serverfehler.' });
   }
 });

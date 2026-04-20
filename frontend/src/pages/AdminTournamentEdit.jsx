@@ -225,7 +225,13 @@ export default function AdminTournamentEdit() {
               {tournament.type !== 'doubles' && (
                 <div className="form-group">
                   <label>Punkte Sieg</label>
-                  <input type="number" value={tournament.points_win} onChange={e => handleChange('points_win', parseInt(e.target.value))} />
+                  <input type="number" step="0.01" value={tournament.points_win} onChange={e => handleChange('points_win', parseFloat(e.target.value))} />
+                </div>
+              )}
+              {tournament.type !== 'doubles' && (
+                <div className="form-group">
+                  <label>Punkte Niederlage</label>
+                  <input type="number" step="0.01" value={tournament.points_loss} onChange={e => handleChange('points_loss', parseFloat(e.target.value))} />
                 </div>
               )}
             </div>
@@ -244,6 +250,17 @@ export default function AdminTournamentEdit() {
                 <label><input type="checkbox" checked={!!tournament.is_doubles} onChange={e => handleChange('is_doubles', e.target.checked ? 1 : 0)} /> Doppel-KO</label>
               )}
             </div>
+            {!!tournament.lk_handicap_enabled && tournament.type !== 'doubles' && (
+              <div style={{ marginTop: '0.75rem' }}>
+                <div className="form-group">
+                  <label>Handicap-Faktor</label>
+                  <input type="number" step="0.01" value={tournament.lk_handicap_factor || 0.5} onChange={e => handleChange('lk_handicap_factor', parseFloat(e.target.value))} style={{ width: 120 }} />
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                  Besserer Spieler gewinnt: Siegpunkte − (LK-Differenz × Faktor), mindestens Mittelwert aus Sieg- und Niederlagepunkten = {((Number(tournament.points_win) + Number(tournament.points_loss)) / 2).toFixed(2)}. Schwächerer Spieler gewinnt: Siegpunkte + (LK-Differenz × Faktor) als Bonus.
+                </div>
+              </div>
+            )}
             </>)}
 
             {tournament.type === 'doubles' && (
@@ -332,8 +349,8 @@ export default function AdminTournamentEdit() {
                         </td>
                       )}
                       <td>
-                        <span className={`badge ${r.status === 'approved' ? 'badge-success' : r.status === 'pending' ? 'badge-warning' : 'badge-danger'}`}>
-                          {r.status === 'approved' ? 'Zugelassen' : r.status === 'pending' ? 'Ausstehend' : r.status}
+                        <span className={`badge ${r.status === 'approved' ? 'badge-success' : r.status === 'pending' ? 'badge-warning' : r.status === 'waitlist' ? 'badge-info' : 'badge-danger'}`}>
+                          {r.status === 'approved' ? 'Zugelassen' : r.status === 'pending' ? 'Ausstehend' : r.status === 'waitlist' ? 'Warteliste' : r.status}
                         </span>
                       </td>
                       <td>
@@ -388,9 +405,9 @@ export default function AdminTournamentEdit() {
                       <td className="text-danger">{s.losses}</td>
                       <td>{s.sets_won}:{s.sets_lost}</td>
                       <td>{s.games_won}:{s.games_lost}</td>
-                      <td>{s.points}</td>
-                      <td>{s.bonus_points > 0 ? `+${s.bonus_points.toFixed(1)}` : '-'}</td>
-                      <td className="points">{(s.points + s.bonus_points).toFixed(1)}</td>
+                      <td>{Number(s.points).toFixed(2)}</td>
+                      <td>{s.bonus_points > 0 ? `+${s.bonus_points.toFixed(2)}` : '-'}</td>
+                      <td className="points">{(s.points + s.bonus_points).toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>

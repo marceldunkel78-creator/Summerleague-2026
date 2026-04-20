@@ -122,7 +122,8 @@ function updateLeagueStandings(matchId) {
     if (winnerLk < loserLk) {
       // Gewinner hat bessere (niedrigere) LK als Verlierer → Malus
       const malus = lkDiff * match.lk_handicap_factor;
-      effectiveWinPoints = Math.max(match.points_win - malus, match.points_loss);
+      const minPoints = (match.points_win + match.points_loss) / 2;
+      effectiveWinPoints = Math.max(match.points_win - malus, minPoints);
     } else if (winnerLk > loserLk) {
       // Gewinner hat schlechtere (höhere) LK als Verlierer → Bonus
       bonusWinner = lkDiff * match.lk_handicap_factor;

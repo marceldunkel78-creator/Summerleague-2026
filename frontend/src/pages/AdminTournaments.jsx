@@ -295,8 +295,8 @@ function CreateTournamentModal({ onClose, onCreated, headers }) {
               {form.lk_handicap_enabled && (
                 <div className="form-group">
                   <label>Handicap-Faktor</label>
-                  <input type="number" step="0.1" name="lk_handicap_factor" value={form.lk_handicap_factor} onChange={handleChange} />
-                  <div className="hint">LK-Differenz × Faktor = Bonuspunkte für den schwächeren Spieler</div>
+                  <input type="number" step="0.01" name="lk_handicap_factor" value={form.lk_handicap_factor} onChange={handleChange} />
+                  <div className="hint">Besserer Spieler gewinnt: Siegpunkte − (LK-Differenz × Faktor), mindestens Mittelwert aus Sieg- und Niederlagepunkten = {((Number(form.points_win) + Number(form.points_loss)) / 2).toFixed(2)}. Schwächerer Spieler gewinnt: Siegpunkte + (LK-Differenz × Faktor) als Bonus.</div>
                 </div>
               )}
             </>

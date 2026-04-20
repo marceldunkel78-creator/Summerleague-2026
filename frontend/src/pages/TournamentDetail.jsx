@@ -102,9 +102,10 @@ export default function TournamentDetail() {
       {error && <div className="alert alert-error">{error}</div>}
 
       {myRegistration && (
-        <div className={`alert ${myRegistration.status === 'approved' ? 'alert-success' : myRegistration.status === 'pending' ? 'alert-warning' : 'alert-info'}`}>
+        <div className={`alert ${myRegistration.status === 'approved' ? 'alert-success' : myRegistration.status === 'pending' ? 'alert-warning' : myRegistration.status === 'waitlist' ? 'alert-warning' : 'alert-info'}`}>
           {myRegistration.status === 'approved' ? '✅ Du bist für dieses Turnier zugelassen.' : 
            myRegistration.status === 'pending' ? '⏳ Deine Anmeldung wartet auf Bestätigung.' :
+           myRegistration.status === 'waitlist' ? '⏳ Du stehst auf der Warteliste. Du rückst automatisch nach, wenn ein Platz frei wird.' :
            `Status: ${myRegistration.status}`}
         </div>
       )}
@@ -230,9 +231,9 @@ export default function TournamentDetail() {
                     <td className="text-danger">{s.losses}</td>
                     <td>{s.sets_won}:{s.sets_lost}</td>
                     <td>{s.games_won}:{s.games_lost}</td>
-                    <td>{s.points}</td>
-                    <td>{s.bonus_points > 0 ? `+${s.bonus_points.toFixed(1)}` : '-'}</td>
-                    <td className="points">{(s.points + s.bonus_points).toFixed(1)}</td>
+                    <td>{Number(s.points).toFixed(2)}</td>
+                    <td>{s.bonus_points > 0 ? `+${s.bonus_points.toFixed(2)}` : '-'}</td>
+                    <td className="points">{(s.points + s.bonus_points).toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -642,7 +643,8 @@ function MatchList({ rounds, matches, tournament, user, onReload }) {
     let effectiveWin = tournament.points_win;
     let bonus = 0;
     if (winnerLk < loserLk) {
-      effectiveWin = Math.max(tournament.points_win - lkDiff * factor, tournament.points_loss);
+      const minPoints = (tournament.points_win + tournament.points_loss) / 2;
+      effectiveWin = Math.max(tournament.points_win - lkDiff * factor, minPoints);
     } else if (winnerLk > loserLk) {
       bonus = lkDiff * factor;
     }
@@ -722,9 +724,9 @@ function MatchList({ rounds, matches, tournament, user, onReload }) {
                           {pts && (
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}
                                  title={`LK ${pts.winnerName}: ${pts.winnerLk} | LK ${pts.loserName}: ${pts.loserLk} | Diff: ${pts.lkDiff.toFixed(1)}`}>
-                              🏆 {pts.winnerName}: {pts.effectiveWin.toFixed(1)} Pkt{pts.bonus > 0 ? ` +${pts.bonus.toFixed(1)} Bonus` : ''}
+                              🏆 {pts.winnerName}: {pts.effectiveWin.toFixed(2)} Pkt{pts.bonus > 0 ? ` +${pts.bonus.toFixed(2)} Bonus` : ''}
                               {' · '}
-                              {pts.loserName}: {pts.lossPoints} Pkt
+                              {pts.loserName}: {Number(pts.lossPoints).toFixed(2)} Pkt
                             </div>
                           )}
                         </td>
