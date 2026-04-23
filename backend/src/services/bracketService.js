@@ -27,6 +27,11 @@ function generateKOBracket(tournamentId) {
 
   const transaction = db.transaction(() => {
     // Aufräumen
+    db.prepare(`
+      DELETE FROM match_sets WHERE match_id IN (
+        SELECT id FROM matches WHERE tournament_id = ?
+      )
+    `).run(tournamentId);
     db.prepare('DELETE FROM matches WHERE tournament_id = ?').run(tournamentId);
     db.prepare('DELETE FROM rounds WHERE tournament_id = ?').run(tournamentId);
 
@@ -194,6 +199,11 @@ function generateLKDayTournament(tournamentId) {
   if (registrations.length < 3) throw new Error('Mindestens 3 Spieler benötigt');
 
   const transaction = db.transaction(() => {
+    db.prepare(`
+      DELETE FROM match_sets WHERE match_id IN (
+        SELECT id FROM matches WHERE tournament_id = ?
+      )
+    `).run(tournamentId);
     db.prepare('DELETE FROM matches WHERE tournament_id = ?').run(tournamentId);
     db.prepare('DELETE FROM rounds WHERE tournament_id = ?').run(tournamentId);
 
@@ -297,6 +307,11 @@ function generateDoublesTournament(tournamentId) {
   };
 
   const transaction = db.transaction(() => {
+    db.prepare(`
+      DELETE FROM match_sets WHERE match_id IN (
+        SELECT id FROM matches WHERE tournament_id = ?
+      )
+    `).run(tournamentId);
     db.prepare('DELETE FROM matches WHERE tournament_id = ?').run(tournamentId);
     db.prepare('DELETE FROM rounds WHERE tournament_id = ?').run(tournamentId);
     db.prepare('DELETE FROM doubles_standings WHERE tournament_id = ?').run(tournamentId);
@@ -438,6 +453,11 @@ function generateOnePointSlam(tournamentId) {
   const totalRounds = Math.log2(bracketSize);
 
   const transaction = db.transaction(() => {
+    db.prepare(`
+      DELETE FROM match_sets WHERE match_id IN (
+        SELECT id FROM matches WHERE tournament_id = ?
+      )
+    `).run(tournamentId);
     db.prepare('DELETE FROM matches WHERE tournament_id = ?').run(tournamentId);
     db.prepare('DELETE FROM rounds WHERE tournament_id = ?').run(tournamentId);
 

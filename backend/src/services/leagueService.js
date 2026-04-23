@@ -38,6 +38,15 @@ function generateRoundRobin(tournamentId) {
 
   const transaction = db.transaction(() => {
     // Bestehende Runden/Matches löschen
+    // match_sets explizit zuerst löschen, dann matches, dann rounds –
+    // vermeidet den SQLite-Bug "no such table: main.rounds__fk_fix" auf
+    // älteren SQLite-Versionen (NAS/Docker), der beim ON DELETE CASCADE
+    // auf der rounds-Tabelle auftreten kann.
+    db.prepare(`
+      DELETE FROM match_sets WHERE match_id IN (
+        SELECT id FROM matches WHERE tournament_id = ?
+      )
+    `).run(tournamentId);
     db.prepare('DELETE FROM matches WHERE tournament_id = ?').run(tournamentId);
     db.prepare('DELETE FROM rounds WHERE tournament_id = ?').run(tournamentId);
     db.prepare('DELETE FROM league_standings WHERE tournament_id = ?').run(tournamentId);
