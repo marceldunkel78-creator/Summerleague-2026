@@ -333,7 +333,7 @@ function initializeDatabase() {
   try {
     db.pragma('foreign_keys = OFF');
     const brokenTables = db.prepare(
-      "SELECT name, sql FROM sqlite_master WHERE type='table' AND (sql LIKE '%tournaments_old%' OR sql LIKE '%_bak%')"
+      "SELECT name, sql FROM sqlite_master WHERE type='table' AND (sql LIKE '%tournaments_old%' OR sql LIKE '%_bak%' OR sql LIKE '%__fk_fix%')"
     ).all();
     for (const t of brokenTables) {
       const tmpName = t.name + '__fk_fix';
@@ -344,6 +344,8 @@ function initializeDatabase() {
       fixedSql = fixedSql.replace(/"tournaments_old"/g, 'tournaments');
       fixedSql = fixedSql.replace(/tournaments_old/g, 'tournaments');
       fixedSql = fixedSql.replace(/"(\w+)_bak"/g, '"$1"');
+      fixedSql = fixedSql.replace(/"(\w+)__fk_fix"/g, '"$1"');
+      fixedSql = fixedSql.replace(/(\w+)__fk_fix/g, '$1');
       db.exec(fixedSql);
       db.exec(`INSERT INTO "${t.name}" SELECT * FROM "${tmpName}"`);
       db.exec(`DROP TABLE "${tmpName}"`);
