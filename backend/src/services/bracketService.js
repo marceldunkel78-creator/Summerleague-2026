@@ -123,7 +123,12 @@ function generateKOBracket(tournamentId) {
     }
   });
 
-  transaction();
+  db.pragma('foreign_keys = OFF');
+  try {
+    transaction();
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
   return { bracketSize, totalRounds };
 }
 
@@ -256,7 +261,12 @@ function generateLKDayTournament(tournamentId) {
     }
   });
 
-  transaction();
+  db.pragma('foreign_keys = OFF');
+  try {
+    transaction();
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
 }
 
 // Doppelturnier generieren
@@ -383,7 +393,12 @@ function generateDoublesTournament(tournamentId) {
     }
   });
 
-  transaction();
+  db.pragma('foreign_keys = OFF');
+  try {
+    transaction();
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
 }
 
 // Doppel-Tabelle aktualisieren nach Ergebnis
@@ -558,7 +573,12 @@ function generateOnePointSlam(tournamentId) {
     }
   });
 
-  transaction();
+  db.pragma('foreign_keys = OFF');
+  try {
+    transaction();
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
   return { bracketSize, totalRounds };
 }
 

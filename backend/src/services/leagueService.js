@@ -85,7 +85,12 @@ function generateRoundRobin(tournamentId) {
     }
   });
 
-  transaction();
+  db.pragma('foreign_keys = OFF');
+  try {
+    transaction();
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
   return { rounds, matchesPerRound };
 }
 
@@ -178,7 +183,12 @@ function updateLeagueStandings(matchId) {
     );
   });
 
-  transaction();
+  db.pragma('foreign_keys = OFF');
+  try {
+    transaction();
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
 }
 
 // Liga-Tabelle abrufen
