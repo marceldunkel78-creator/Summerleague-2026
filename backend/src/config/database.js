@@ -248,6 +248,20 @@ function initializeDatabase() {
     { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('users') WHERE name='phone'", sql: "ALTER TABLE users ADD COLUMN phone TEXT" },
     { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('matches') WHERE name='server_id'", sql: "ALTER TABLE matches ADD COLUMN server_id INTEGER REFERENCES users(id)" },
     { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournaments') WHERE name='start_time'", sql: "ALTER TABLE tournaments ADD COLUMN start_time TEXT" },
+
+    // Legacy compatibility for older NAS databases
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournaments') WHERE name='points_win'", sql: "ALTER TABLE tournaments ADD COLUMN points_win INTEGER DEFAULT 3" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournaments') WHERE name='points_loss'", sql: "ALTER TABLE tournaments ADD COLUMN points_loss INTEGER DEFAULT 0" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournaments') WHERE name='points_draw'", sql: "ALTER TABLE tournaments ADD COLUMN points_draw INTEGER DEFAULT 1" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournaments') WHERE name='lk_handicap_enabled'", sql: "ALTER TABLE tournaments ADD COLUMN lk_handicap_enabled INTEGER DEFAULT 0" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('tournaments') WHERE name='lk_handicap_factor'", sql: "ALTER TABLE tournaments ADD COLUMN lk_handicap_factor REAL DEFAULT 0.5" },
+
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('league_standings') WHERE name='games_won'", sql: "ALTER TABLE league_standings ADD COLUMN games_won INTEGER DEFAULT 0" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('league_standings') WHERE name='games_lost'", sql: "ALTER TABLE league_standings ADD COLUMN games_lost INTEGER DEFAULT 0" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('league_standings') WHERE name='bonus_points'", sql: "ALTER TABLE league_standings ADD COLUMN bonus_points REAL DEFAULT 0" },
+
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('match_sets') WHERE name='tiebreak_points_player1'", sql: "ALTER TABLE match_sets ADD COLUMN tiebreak_points_player1 INTEGER" },
+    { check: "SELECT COUNT(*) as cnt FROM pragma_table_info('match_sets') WHERE name='tiebreak_points_player2'", sql: "ALTER TABLE match_sets ADD COLUMN tiebreak_points_player2 INTEGER" },
   ];
   for (const m of migrations) {
     if (db.prepare(m.check).get().cnt === 0) {
